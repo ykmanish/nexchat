@@ -52,6 +52,7 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
 
   const pressTimer = useRef(null);
   const pressOrigin = useRef({ x: 0, y: 0 });
+  const openedRef = useRef(false);
   const [pressed, setPressed] = useState(false);
 
   const text = plain?.text || '';
@@ -69,17 +70,35 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
   const status = isMine ? receiptStatus(message) : null;
 
   /* ── long-press opens the action menu; a small drag cancels it ── */
+
+  /* One open per gesture.
+     A long press on Android also makes the browser fire `contextmenu`, at
+     roughly 500ms — just before our own timer. Both paths called
+     openContextMenu, so the menu opened twice a few tens of milliseconds
+     apart, at slightly different coordinates, and visibly jumped as it
+     re-placed itself. This latch lets whichever fires first win and ignores
+     the other until the finger goes down again. */
+  const openMenuOnce = (x, y) => {
+    if (openedRef.current || selecting) return;
+    openedRef.current = true;
+    clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+    feedback('select');
+    openContextMenu({ message, isMine, x, y });
+    setPressed(false);
+  };
+
   const startPress = (e) => {
     if (selecting) return;
     const point = e.touches?.[0] || e;
     pressOrigin.current = { x: point.clientX, y: point.clientY };
+    openedRef.current = false;
     setPressed(true);
 
-    pressTimer.current = setTimeout(() => {
-      feedback('select');
-      openContextMenu({ message, isMine, x: point.clientX, y: point.clientY });
-      setPressed(false);
-    }, LONG_PRESS_MS);
+    pressTimer.current = setTimeout(
+      () => openMenuOnce(point.clientX, point.clientY),
+      LONG_PRESS_MS
+    );
   };
 
   const movePress = (e) => {
@@ -168,8 +187,10 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
           onPointerCancel={endPress}
           onPointerLeave={endPress}
           onContextMenu={(e) => {
+            // Suppress the native long-press menu and text selection that
+            // would otherwise come with it.
             e.preventDefault();
-            openContextMenu({ message, isMine, x: e.clientX, y: e.clientY });
+            openMenuOnce(e.clientX, e.clientY);
           }}
           onDoubleClick={() => {
             if (!deleted) useChat.getState().toggleReaction(message, '❤️');

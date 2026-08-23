@@ -419,6 +419,27 @@
   border-radius: 10px;
 }
 
+/* Long-pressing a bubble is our gesture, not the browser's.
+   Without this Android starts a text selection under the finger and raises its
+   own selection handles and copy bar, which fights the action menu and shows
+   up as flicker. `user-select` alone is not enough on WebKit: the callout is a
+   separate behaviour, and the tap highlight paints a grey box over the bubble
+   for the duration of the press. Copying is still available from the menu. */
+.bubble,
+.bubble * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A code block is the one place worth selecting by hand. */
+.bubble pre,
+.bubble pre * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Search hits inside a bubble. */
 mark.hit {
   background: rgb(var(--accent-rgb) / 0.34);
