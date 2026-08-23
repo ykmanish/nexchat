@@ -1,0 +1,16 @@
+{
+  "name": "NexChat",
+  "short_name": "NexChat",
+  "description": "Fast, end-to-end encrypted messaging.",
+  "start_url": "/chats",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#21C063",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

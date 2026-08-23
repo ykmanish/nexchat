@@ -1,0 +1,543 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════ tokens ═══════════════════════════════ */
+
+@layer base {
+  :root {
+    /* surfaces */
+    --app-bg-rgb: 255 255 255;
+    --app-bg: rgb(var(--app-bg-rgb));
+    --surface: #ffffff;
+    --surface-2: #f7f8fa;
+    --surface-3: #eff2f5;
+    --raised: #ffffff;
+    --header: #f7f8fa;
+
+    /* lines */
+    --border: rgba(17, 27, 33, 0.08);
+    --border-strong: rgba(17, 27, 33, 0.16);
+
+    /* type */
+    --text-rgb: 17 27 33;
+    --text: rgb(var(--text-rgb));
+    --text-soft: #3b4a54;
+    --text-muted: #667781;
+    --text-faint-rgb: 134 150 160;
+    --text-faint: rgb(var(--text-faint-rgb));
+
+    /* brand — WhatsApp's fresh green */
+    --accent-rgb: 33 192 99;
+    --accent: rgb(var(--accent-rgb));
+    --flash-tint: rgb(var(--accent-rgb) / 0.22);
+    --accent-strong: #1daa61;
+    --accent-deep: #128c7e;
+    --accent-ink: #ffffff;
+    --accent-tint: rgba(33, 192, 99, 0.12);
+
+    /* bubbles — overridden per user preference */
+    --bubble-out: #d9fdd3;
+    --bubble-out-ink: #111b21;
+    --bubble-out-meta: rgba(17, 27, 33, 0.45);
+    --bubble-in: #ffffff;
+    --bubble-in-ink: #111b21;
+    --bubble-in-meta: rgba(17, 27, 33, 0.4);
+
+    /* chat canvas */
+    --chat-bg: #efe7de;
+    --chat-doodle: rgba(17, 27, 33, 0.045);
+
+    /* status */
+    --tick-read: #53bdeb;
+    --danger: #ea0038;
+    --warning: #ffa726;
+    --info: #027eb5;
+
+    --nav-blur: rgba(255, 255, 255, 0.82);
+    --shadow-key: 17, 27, 33;
+
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Dark scheme, matched to WhatsApp's refreshed palette: a near-black with a
+     faint green cast rather than the blue-grey it used to use, and a muted
+     forest bubble in place of the old saturated teal.
+
+     `--app-bg` deliberately sits a step below `--surface` — the window and
+     icon rail read as the darkest layer, with the chat list floating above
+     it, which is what gives the reference its depth. */
+  .dark {
+    --app-bg-rgb: 10 15 13;
+    --app-bg: rgb(var(--app-bg-rgb));
+    --surface: #101614;
+    --surface-2: #1c2321;
+    --surface-3: #29312e;
+    --raised: #182120;
+    --header: #101614;
+
+    /* Neutral, so panel edges do not pick up a blue tint. */
+    --border: rgba(233, 237, 239, 0.08);
+    --border-strong: rgba(233, 237, 239, 0.16);
+
+    --text-rgb: 233 237 239;
+    --text: rgb(var(--text-rgb));
+    --text-soft: #d3d9d7;
+    --text-muted: #8c9a95;
+    --text-faint-rgb: 106 119 114;
+    --text-faint: rgb(var(--text-faint-rgb));
+
+    --accent-rgb: 33 192 99;
+    --accent: rgb(var(--accent-rgb));
+    --flash-tint: rgb(var(--accent-rgb) / 0.32);
+    --accent-strong: #25d366;
+    --accent-deep: #12854a;
+    --accent-ink: #0a0f0d;
+    --accent-tint: rgba(33, 192, 99, 0.16);
+
+    --bubble-out: #144d37;
+    --bubble-out-ink: #e9edef;
+    --bubble-out-meta: rgba(233, 237, 239, 0.55);
+    --bubble-in: #1c2321;
+    --bubble-in-ink: #e9edef;
+    --bubble-in-meta: rgba(233, 237, 239, 0.45);
+
+    --chat-bg: #0b100e;
+    --chat-doodle: rgba(233, 237, 239, 0.04);
+
+    --tick-read: #53bdeb;
+    --danger: #f15c6d;
+    --warning: #ffb84d;
+    --info: #53bdeb;
+
+    --nav-blur: #101614;
+    --shadow-key: 0, 0, 0;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+    /* Nothing should ever push the layout sideways. */
+    min-width: 0;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    background: var(--app-bg);
+    color: var(--text);
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: calc(15px * var(--font-scale, 1));
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display), system-ui, sans-serif;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+
+  ::selection {
+    background: var(--accent-tint);
+  }
+
+  /* Thin scrollbars that only appear on hover. */
+  .scroll-soft {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .scroll-soft:hover {
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .scroll-soft::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scroll-soft::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-soft::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 99px;
+  }
+  .scroll-soft:hover::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  input,
+  textarea {
+    font-size: 16px; /* stops iOS Safari zooming on focus */
+  }
+  @media (min-width: 768px) {
+    input,
+    textarea {
+      font-size: inherit;
+    }
+  }
+}
+
+/* ═══════════════════════════ components ═══════════════════════════ */
+
+@layer components {
+  /* Solid, not frosted — blurring the backdrop hides what is behind it. */
+  .glass {
+    background: var(--header);
+  }
+
+  /* Long-press / tap feedback used on every interactive surface. */
+  .press {
+    transition:
+      transform 0.18s cubic-bezier(0.32, 0.72, 0, 1),
+      background-color 0.18s ease;
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-tint);
+  }
+
+  /* ── chat bubbles ──
+     A real tail, drawn with a pseudo-element triangle the way WhatsApp does,
+     so grouped messages read as one block with a single tail at the edge. */
+  .bubble {
+    position: relative;
+    max-width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 1px 0.5px rgba(var(--shadow-key), 0.13);
+  }
+
+  .bubble-out {
+    background: var(--bubble-out);
+    color: var(--bubble-out-ink);
+  }
+  .bubble-in {
+    background: var(--bubble-in);
+    color: var(--bubble-in-ink);
+  }
+
+  .bubble-tail-out {
+    border-top-right-radius: 0;
+  }
+  .bubble-tail-out::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -8px;
+    width: 8px;
+    height: 13px;
+    background: var(--bubble-out);
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+
+  .bubble-tail-in {
+    border-top-left-radius: 0;
+  }
+  .bubble-tail-in::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -8px;
+    width: 8px;
+    height: 13px;
+    background: var(--bubble-in);
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface-3);
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+  .dark .skeleton::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  }
+
+  .safe-top {
+    padding-top: var(--safe-top);
+  }
+  .safe-bottom {
+    padding-bottom: var(--safe-bottom);
+  }
+
+  /* Locks the app to the viewport so only the message list scrolls. */
+  .app-shell {
+    height: 100dvh;
+    max-height: 100dvh;
+    width: 100%;
+    max-width: 100vw;
+    overflow: hidden;
+  }
+
+  /* Rows that should reveal actions on hover, desktop only. */
+  .row-hover:hover {
+    background: var(--surface-2);
+  }
+
+  /* Anything that floats above the app — sheets, menus, dialogs. */
+  .surface-raised {
+    background: var(--raised);
+  }
+}
+
+/* ═══════════════════════════ chat wallpapers ═══════════════════════════ */
+
+/* The doodle layer is one repeating SVG at low opacity, tinted by the theme. */
+.chat-canvas {
+  background-color: var(--chat-bg);
+  position: relative;
+}
+
+.chat-canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 1;
+  background-image: var(--chat-pattern, none);
+  background-size: 380px 380px;
+}
+
+.wp-doodle {
+  --chat-bg: #efe7de;
+  --chat-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='380' height='380' viewBox='0 0 380 380'%3E%3Cg fill='none' stroke='%230a0f0d' stroke-opacity='0.05' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M30 40c6-8 14-8 20 0s14 8 20 0'/%3E%3Ccircle cx='120' cy='45' r='11'/%3E%3Cpath d='M175 34l7 14 15 2-11 11 3 15-14-7-14 7 3-15-11-11 15-2z'/%3E%3Crect x='245' y='30' width='24' height='24' rx='6'/%3E%3Cpath d='M310 52c0-12 9-21 21-21s21 9 21 21-9 21-21 21h-21z'/%3E%3Cpath d='M40 120h30M40 132h20'/%3E%3Ccircle cx='120' cy='128' r='6'/%3E%3Cpath d='M108 150c4-8 20-8 24 0'/%3E%3Cpath d='M180 112l18 18-18 18-18-18z'/%3E%3Cpath d='M240 118c8-6 18-6 26 0M240 132c8-6 18-6 26 0'/%3E%3Cpath d='M320 110v34M303 127h34'/%3E%3Cpath d='M35 210c10-14 26-14 36 0s-8 26-18 26-28-12-18-26z'/%3E%3Ccircle cx='125' cy='218' r='14'/%3E%3Cpath d='M118 218h14M125 211v14'/%3E%3Cpath d='M170 232c0-16 12-28 26-28M186 204v28'/%3E%3Crect x='240' y='202' width='30' height='22' rx='4'/%3E%3Cpath d='M240 210h30'/%3E%3Cpath d='M312 200l10 26 10-26'/%3E%3Cpath d='M30 300c8 10 22 10 30 0'/%3E%3Cpath d='M108 292l12 12 12-12'/%3E%3Ccircle cx='185' cy='300' r='12'/%3E%3Cpath d='M240 288v28l22-14z'/%3E%3Cpath d='M305 292h30v22h-22l-8 8z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.dark .wp-doodle {
+  --chat-bg: #0b100e;
+  --chat-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='380' height='380' viewBox='0 0 380 380'%3E%3Cg fill='none' stroke='%23e9edef' stroke-opacity='0.045' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M30 40c6-8 14-8 20 0s14 8 20 0'/%3E%3Ccircle cx='120' cy='45' r='11'/%3E%3Cpath d='M175 34l7 14 15 2-11 11 3 15-14-7-14 7 3-15-11-11 15-2z'/%3E%3Crect x='245' y='30' width='24' height='24' rx='6'/%3E%3Cpath d='M310 52c0-12 9-21 21-21s21 9 21 21-9 21-21 21h-21z'/%3E%3Cpath d='M40 120h30M40 132h20'/%3E%3Ccircle cx='120' cy='128' r='6'/%3E%3Cpath d='M108 150c4-8 20-8 24 0'/%3E%3Cpath d='M180 112l18 18-18 18-18-18z'/%3E%3Cpath d='M240 118c8-6 18-6 26 0M240 132c8-6 18-6 26 0'/%3E%3Cpath d='M320 110v34M303 127h34'/%3E%3Cpath d='M35 210c10-14 26-14 36 0s-8 26-18 26-28-12-18-26z'/%3E%3Ccircle cx='125' cy='218' r='14'/%3E%3Cpath d='M118 218h14M125 211v14'/%3E%3Cpath d='M170 232c0-16 12-28 26-28M186 204v28'/%3E%3Crect x='240' y='202' width='30' height='22' rx='4'/%3E%3Cpath d='M240 210h30'/%3E%3Cpath d='M312 200l10 26 10-26'/%3E%3Cpath d='M30 300c8 10 22 10 30 0'/%3E%3Cpath d='M108 292l12 12 12-12'/%3E%3Ccircle cx='185' cy='300' r='12'/%3E%3Cpath d='M240 288v28l22-14z'/%3E%3Cpath d='M305 292h30v22h-22l-8 8z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.wp-plain {
+  --chat-bg: #efe7de;
+  --chat-pattern: none;
+}
+.dark .wp-plain {
+  --chat-bg: #0b100e;
+}
+
+.wp-paper {
+  --chat-bg: #f4f1ea;
+  --chat-pattern: none;
+}
+.dark .wp-paper {
+  --chat-bg: #141a17;
+}
+
+.wp-mint {
+  --chat-bg: #e4f2e8;
+  --chat-pattern: none;
+}
+.dark .wp-mint {
+  --chat-bg: #0d1a16;
+}
+
+.wp-sky {
+  --chat-bg: #e6eef5;
+  --chat-pattern: none;
+}
+.dark .wp-sky {
+  --chat-bg: #0c1620;
+}
+
+.wp-blush {
+  --chat-bg: #f7e9ea;
+  --chat-pattern: none;
+}
+.dark .wp-blush {
+  --chat-bg: #1a1114;
+}
+
+.wp-graphite {
+  --chat-bg: #e8eaec;
+  --chat-pattern: none;
+}
+.dark .wp-graphite {
+  --chat-bg: #151917;
+}
+
+/* ═══════════════════════════ animations ═══════════════════════════ */
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Jump-to-message flash: a brief green wash so the eye lands on it. */
+/* Jump-to-message highlight. The tint reads from the accent so it follows a
+   theme change, and runs stronger in dark where the canvas is near-black. */
+@keyframes msg-flash {
+  0%   { background-color: transparent; }
+  18%  { background-color: var(--flash-tint); }
+  100% { background-color: transparent; }
+}
+
+.msg-flash {
+  animation: msg-flash 1.5s ease-out;
+  border-radius: 10px;
+}
+
+/* Search hits inside a bubble. */
+mark.hit {
+  background: rgb(var(--accent-rgb) / 0.34);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+mark.hit-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes record-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* ── emoji picker ──
+   emoji-picker-react ships its own light/dark palettes (a neutral #222 grey in
+   dark), which sits badly next to the blue-grey WhatsApp scheme. Point its
+   variables at the app tokens so it inherits the theme instead of guessing.
+
+   Both the base names and the `--epr-dark-*` names are set: the library's
+   `.epr-dark-theme` rule re-points each base name at its dark twin, and that
+   rule outranks this one, so overriding only the base names would be ignored
+   in dark mode. The app tokens already flip with `.dark`, so pointing both
+   sets at the same token gives the right colour either way. */
+.EmojiPickerReact.epr-main {
+  --epr-bg-color: var(--surface);
+  --epr-dark-bg-color: var(--surface);
+  --epr-category-label-bg-color: var(--surface);
+  --epr-dark-category-label-bg-color: var(--surface);
+  --epr-category-label-text-color: var(--text-muted);
+  --epr-text-color: var(--text);
+  --epr-dark-text-color: var(--text);
+
+  --epr-search-input-bg-color: var(--surface-2);
+  --epr-dark-search-input-bg-color: var(--surface-2);
+  --epr-search-input-bg-color-active: var(--surface-3);
+  --epr-dark-search-input-bg-color-active: var(--surface-3);
+  --epr-search-input-text-color: var(--text);
+  --epr-search-input-placeholder-color: var(--text-faint);
+  --epr-search-border-color: transparent;
+  --epr-search-border-color-active: var(--accent);
+
+  --epr-hover-bg-color: var(--surface-2);
+  --epr-dark-hover-bg-color: var(--surface-2);
+  --epr-emoji-hover-color: var(--surface-2);
+  --epr-focus-bg-color: var(--surface-3);
+  --epr-dark-focus-bg-color: var(--surface-3);
+  --epr-highlight-color: var(--accent);
+  --epr-dark-highlight-color: var(--accent);
+  --epr-category-icon-active-color: var(--accent);
+  --epr-dark-category-icon-active-color: var(--accent);
+
+  --epr-picker-border-color: transparent;
+  --epr-dark-picker-border-color: transparent;
+  --epr-preview-border-color: var(--border);
+  --epr-preview-text-color: var(--text-muted);
+  --epr-emoji-variation-indicator-color: var(--text-faint);
+  --epr-emoji-variation-picker-bg-color: var(--raised);
+  --epr-dark-emoji-variation-picker-bg-color: var(--raised);
+  --epr-skin-tone-picker-menu-color: var(--raised);
+  --epr-dark-skin-tone-picker-menu-color: var(--raised);
+  --epr-skin-tone-outer-border-color: var(--border-strong);
+  --epr-dark-skin-tone-outer-border-color: var(--border-strong);
+  --epr-active-skin-hover-color: var(--surface-2);
+  --epr-active-skin-tone-indicator-border-color: var(--accent);
+  --epr-reactions-bg-color: var(--raised);
+  --epr-dark-reactions-bg-color: var(--raised);
+
+  /* it always sits inside a container that clips it already */
+  --epr-picker-border-radius: 0;
+  --epr-search-input-border-radius: 10px;
+  border: 0;
+  font-family: var(--font-satre), system-ui, sans-serif;
+}
+
+/* The category strip is sticky, so it must be fully opaque or emoji show
+   through it as it scrolls under. */
+.EmojiPickerReact .epr-emoji-category-label {
+  background: var(--surface);
+  font-family: var(--font-satre), system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
