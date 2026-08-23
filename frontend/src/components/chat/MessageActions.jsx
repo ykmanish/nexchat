@@ -52,65 +52,52 @@ export function MessageActions({ conversation }) {
      `message` undefined by the time the delete runs. */
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0, origin: 'top left' });
+  /* `null` until the menu has been measured and placed. */
+  const [pos, setPos] = useState(null);
   const menuRef = useRef(null);
 
   const message = contextMenu?.message;
   const isMine = contextMenu?.isMine;
 
-  /* Layout effect, not effect: the clamp below is also a layout effect, and
-     effects of the same kind run in declaration order. As a plain useEffect
-     this ran *after* the clamp, so the clamp corrected a stale position and
-     was then overwritten by this estimate. */
-  useLayoutEffect(() => {
-    if (!contextMenu) return;
+  /* Measure first, then place — one pass.
+     Positioning used to run off an *estimated* height (a fixed nine actions),
+     with a second effect correcting it afterwards. Two things went wrong with
+     that: the estimate is wrong on someone else's message, where the action
+     list is shorter, and the correction ran against whatever position was left
+     over from the previous open. Both showed up as the menu jumping around as
+     it appeared — worst below the halfway point of the screen, because that is
+     where the estimate decides to flip the menu upward.
 
+     The menu is rendered hidden until this has run. `visibility: hidden` still
+     lays out, so it can be measured, and nothing is painted at the wrong
+     place. */
+  useLayoutEffect(() => {
+    if (!contextMenu) {
+      setPos(null);
+      return;
+    }
+    if (!menuRef.current) return;
+
+    const height = menuRef.current.offsetHeight;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const actionCount = 9;
-    const menuH = actionCount * 42 + REACTIONS_H + 24;
 
     let left = contextMenu.x - MENU_W / 2;
     left = Math.max(PAD, Math.min(left, vw - MENU_W - PAD));
 
-    const flipUp = contextMenu.y + menuH + PAD > vh;
-    const top = flipUp
-      ? Math.max(PAD, contextMenu.y - menuH)
-      : Math.min(contextMenu.y - REACTIONS_H, vh - menuH - PAD);
+    // Flip above the finger when there is not room below it.
+    const flipUp = contextMenu.y + height + PAD > vh;
+    const wanted = flipUp ? contextMenu.y - height : contextMenu.y - REACTIONS_H;
+    const top = Math.min(Math.max(PAD, wanted), Math.max(PAD, vh - PAD - height));
 
     const originX = contextMenu.x - left < MENU_W / 2 ? 'left' : 'right';
-    setPos({
-      top: Math.max(PAD, top),
-      left,
-      origin: (flipUp ? 'bottom ' : 'top ') + originX,
-    });
+
+    // Tagged with the menu it was computed for, so a stale position from the
+    // previous open can never be treated as current.
+    setPos({ top, left, origin: (flipUp ? 'bottom ' : 'top ') + originX, for: contextMenu });
   }, [contextMenu]);
 
-  /* The block above positions from an *estimated* height, because the menu has
-     not rendered yet. That estimate assumes a fixed action count, but the list
-     is shorter on someone else's message — so near the bottom of the screen
-     the menu could still overhang. Measure it once it exists and pull it back
-     into view. */
-  useLayoutEffect(() => {
-    if (!contextMenu || !menuRef.current) return;
-
-    /* `offsetHeight`, not getBoundingClientRect().height. The menu animates in
-       from scale 0.88, and a bounding rect includes that transform — so the
-       measured height grew on every frame, each measurement moved the menu,
-       and moving it re-ran this effect. That feedback loop is what made the
-       menu flicker while opening. offsetHeight is the untransformed layout
-       height and is stable from the first frame. */
-    const height = menuRef.current.offsetHeight;
-    const maxTop = Math.max(PAD, window.innerHeight - PAD - height);
-
-    setPos((prev) => {
-      const top = Math.min(Math.max(PAD, prev.top), maxTop);
-      // Returning the same object when nothing moved keeps React from
-      // scheduling a pointless render.
-      return top === prev.top ? prev : { ...prev, top };
-    });
-    // Deliberately not keyed on `pos.top`: that is what closed the loop.
-  }, [contextMenu]);
+  const placed = !!pos && pos.for === contextMenu;
 
   /* Dismissal lives on the document rather than on the scrim.
      The scrim is a framer-motion element, so its React handler is wrapped and
@@ -263,7 +250,14 @@ export function MessageActions({ conversation }) {
               exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.12 } }}
               transition={{ type: 'spring', damping: 22, stiffness: 420, mass: 0.6 }}
               ref={menuRef}
-              style={{ top: pos.top, left: pos.left, transformOrigin: pos.origin }}
+              style={{
+                top: pos?.top ?? 0,
+                left: pos?.left ?? 0,
+                transformOrigin: pos?.origin ?? 'top left',
+                // Laid out but not painted until measured, so it never
+                // appears at a stale position first.
+                visibility: placed ? 'visible' : 'hidden',
+              }}
               className="fixed z-[95]"
             >
               {/* reaction strip */}
