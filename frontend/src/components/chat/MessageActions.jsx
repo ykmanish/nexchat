@@ -43,6 +43,7 @@ export function MessageActions({ conversation }) {
 
   const toggleReaction = useChat((s) => s.toggleReaction);
   const toggleStar = useChat((s) => s.toggleStar);
+  const togglePin = useChat((s) => s.togglePin);
   const deleteMessage = useChat((s) => s.deleteMessage);
   const plain = useChat((s) => s.plain);
 
@@ -176,10 +177,7 @@ export function MessageActions({ conversation }) {
       label: message?.pinned ? 'Unpin' : 'Pin',
       icon: Pin,
       hidden: conversation?.type !== 'direct' && !conversation?.isAdmin,
-      onClick: async () => {
-        const { api } = await import('@/lib/api');
-        await api.post('/messages/' + message._id + '/pin');
-      },
+      onClick: () => togglePin(message),
     },
     { label: 'Edit', icon: Pencil, hidden: !editable, onClick: () => setEditing(message) },
     { label: 'Select', icon: CheckSquare, onClick: () => toggleSelection(message._id) },
@@ -241,7 +239,7 @@ export function MessageActions({ conversation }) {
                 e.preventDefault();
                 closeContextMenu();
               }}
-              className="fixed inset-0 z-[90] bg-black/45"
+              className="fixed inset-0 z-[90] select-none bg-black/45"
             />
 
             <motion.div
@@ -258,7 +256,7 @@ export function MessageActions({ conversation }) {
                 // appears at a stale position first.
                 visibility: placed ? 'visible' : 'hidden',
               }}
-              className="fixed z-[95]"
+              className="fixed z-[95] select-none"
             >
               {/* reaction strip */}
               {!message?.deletedForEveryone && (

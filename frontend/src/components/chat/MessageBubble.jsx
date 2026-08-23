@@ -260,6 +260,9 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
             <p className="flex items-center gap-1.5 px-1 text-[14.5px] italic opacity-60">
               <AlertCircle size={13} />
               This message was deleted
+              {/* The timestamp is absolutely positioned, so every body has to
+                  reserve room for it or the two overlap. */}
+              <span className="w-[52px] shrink-0" aria-hidden />
             </p>
           ) : undecrypted ? (
             <p className="flex items-center gap-1.5 px-1 text-[14px] italic opacity-60">

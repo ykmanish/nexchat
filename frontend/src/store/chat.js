@@ -461,9 +461,38 @@ export const useChat = create((set, get) => ({
     }
   },
 
+  /* Star and pin both flip locally first so the menu reacts instantly, then
+     reconcile with what the server actually stored. On failure the change is
+     rolled back and said out loud — silently doing nothing looked like the
+     button was broken. */
   async toggleStar(message) {
-    const { data } = await api.post('/messages/' + message._id + '/star');
-    get().applyMessagePatch(String(message.conversation), message._id, { starred: data.starred });
+    const conversationId = String(message.conversation);
+    const was = !!message.starred;
+
+    get().applyMessagePatch(conversationId, message._id, { starred: !was });
+    try {
+      const { data } = await api.post('/messages/' + message._id + '/star');
+      get().applyMessagePatch(conversationId, message._id, { starred: data.starred });
+      toast.success(data.starred ? 'Starred' : 'Removed from starred');
+    } catch (err) {
+      get().applyMessagePatch(conversationId, message._id, { starred: was });
+      toast.error(err.message || 'Could not star that message');
+    }
+  },
+
+  async togglePin(message) {
+    const conversationId = String(message.conversation);
+    const was = !!message.pinned;
+
+    get().applyMessagePatch(conversationId, message._id, { pinned: !was });
+    try {
+      const { data } = await api.post('/messages/' + message._id + '/pin');
+      get().applyMessagePatch(conversationId, message._id, { pinned: data.pinned });
+      toast.success(data.pinned ? 'Pinned' : 'Unpinned');
+    } catch (err) {
+      get().applyMessagePatch(conversationId, message._id, { pinned: was });
+      toast.error(err.message || 'Could not pin that message');
+    }
   },
 
   async forwardTo(message, conversationIds) {
