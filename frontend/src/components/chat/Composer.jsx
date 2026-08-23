@@ -619,7 +619,22 @@ export function Composer({ conversation, onSent }) {
                   layout
                   whileTap={{ scale: 0.88 }}
                   transition={{ type: 'spring', damping: 20, stiffness: 420 }}
-                  onClick={canSend ? send : () => recorder.start()}
+                  /* Tapping any button blurs the textarea, and on a phone that
+                     drops the keyboard after every message. preventDefault on
+                     mousedown stops the blur outright on pointer devices; on
+                     touch the blur has already happened by click time, so the
+                     textarea is re-focused synchronously inside the gesture —
+                     iOS only re-opens the keyboard from within a user gesture,
+                     so this must happen before `send` awaits anything. */
+                  onMouseDown={(e) => canSend && e.preventDefault()}
+                  onClick={() => {
+                    if (!canSend) {
+                      recorder.start();
+                      return;
+                    }
+                    textareaRef.current?.focus();
+                    send();
+                  }}
                   disabled={uploading}
                   aria-label={canSend ? 'Send' : 'Record a voice message'}
                   className={cn(

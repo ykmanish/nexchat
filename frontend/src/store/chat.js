@@ -281,7 +281,15 @@ export const useChat = create((set, get) => ({
     const clientId = uid();
     const me = getMe();
 
-    const payload = { text, attachments, ...meta };
+    /* `previewUrl` is a blob: URL minted by URL.createObjectURL on this
+       device — it is meaningful only in this browser session. It must not
+       travel: the recipient decrypts the payload, sees a previewUrl, and
+       <Attachment> then skips decryption entirely and renders a blob that
+       does not exist for them, which is a broken image. The sender's own
+       optimistic bubble keeps it via localPayload, so the preview is still
+       instant locally. */
+    const payload = { text, attachments: attachments.map(stripLocalOnly), ...meta };
+    const localPayload = { text, attachments, ...meta };
 
     // Optimistic bubble — it appears before the network round-trip.
     const optimistic = {
@@ -306,7 +314,7 @@ export const useChat = create((set, get) => ({
         ...s.messages,
         [conversationId]: [...(s.messages[conversationId] || []), optimistic],
       },
-      plain: { ...s.plain, [clientId]: payload },
+      plain: { ...s.plain, [clientId]: localPayload },
     }));
 
     get().patchConversation(conversationId, { lastMessageAt: optimistic.createdAt });
@@ -594,5 +602,11 @@ function mergeById(existing, incoming) {
 /** Attachment keys live inside the encrypted payload, never on the wire meta. */
 function stripAttachmentSecrets(a) {
   const { key, iv, name, mime, ...rest } = a;
+  return rest;
+}
+
+/** Drops fields that only mean something on the device that created them. */
+function stripLocalOnly(a) {
+  const { previewUrl, ...rest } = a;
   return rest;
 }

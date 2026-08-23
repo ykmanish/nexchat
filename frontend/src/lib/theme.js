@@ -59,6 +59,16 @@ export const BUBBLE_COLORS = [
   },
 ];
 
+/**
+ * Mobile status/URL-bar colour per theme.
+ *
+ * Kept as constants rather than read back off `--header` at runtime: the theme
+ * class lands on <html> in next-themes' own effect, so any synchronous read
+ * (or one a frame later) can still return the colour being replaced. These
+ * must stay equal to `--header` in globals.css.
+ */
+export const STATUS_BAR = { light: '#f7f8fa', dark: '#101614' };
+
 export const WALLPAPERS = [
   { id: 'doodle', name: 'Doodles', preview: '#efe7de', previewDark: '#0b100e' },
   { id: 'plain', name: 'Classic', preview: '#efe7de', previewDark: '#0b100e' },

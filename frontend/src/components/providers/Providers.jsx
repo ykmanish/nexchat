@@ -9,7 +9,7 @@ import { onUnauthorized } from '@/lib/api';
 import { getSocket, connectSocket } from '@/lib/socket';
 import { unlockAudio, feedback } from '@/lib/sound';
 import { ToastStack } from '@/components/ui/Toast';
-import { applyBubbleTheme, applyFontScale } from '@/lib/theme';
+import { applyBubbleTheme, applyFontScale, STATUS_BAR } from '@/lib/theme';
 
 export function Providers({ children }) {
   return (
@@ -32,6 +32,34 @@ function AppearanceBridge() {
   useEffect(() => {
     applyBubbleTheme(settings?.bubbleColor || 'green', resolvedTheme === 'dark');
   }, [settings?.bubbleColor, resolvedTheme]);
+
+  /* Keep the mobile status/URL bar in step with the app's theme.
+     The value is read back off `--header` rather than hardcoded, so it stays
+     correct if the palette changes. */
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const color = STATUS_BAR[resolvedTheme === 'dark' ? 'dark' : 'light'];
+
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', color);
+
+    // iOS standalone reads this one instead; `black-translucent` would let
+    // content slide under the notch, so each theme gets the opaque style
+    // that actually exists.
+    let status = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if (!status) {
+      status = document.createElement('meta');
+      status.setAttribute('name', 'apple-mobile-web-app-status-bar-style');
+      document.head.appendChild(status);
+    }
+    status.setAttribute('content', resolvedTheme === 'dark' ? 'black' : 'default');
+  }, [resolvedTheme]);
 
   useEffect(() => {
     applyFontScale(settings?.fontScale || 1);

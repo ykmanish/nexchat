@@ -14,11 +14,18 @@ import { feedback } from '@/lib/sound';
  * hand the result to an object URL — the plaintext never touches the network.
  */
 export function useDecryptedMedia(attachment) {
-  const [url, setUrl] = useState(attachment?.previewUrl || null);
-  const [state, setState] = useState(attachment?.previewUrl ? 'ready' : 'idle');
+  /* A previewUrl is a blob: URL from the device that sent the file. Older
+     messages have one baked into their payload, and on any other device it
+     points at nothing. Treat it as a hint that is allowed to fail: `dropped`
+     flips when it does, and the normal fetch-and-decrypt path takes over. */
+  const [dropped, setDropped] = useState(false);
+  const preview = dropped ? null : attachment?.previewUrl || null;
+
+  const [url, setUrl] = useState(preview);
+  const [state, setState] = useState(preview ? 'ready' : 'idle');
 
   useEffect(() => {
-    if (!attachment?.url || !attachment?.key || attachment.previewUrl) return undefined;
+    if (!attachment?.url || !attachment?.key || preview) return undefined;
 
     let objectUrl = null;
     let cancelled = false;
@@ -45,14 +52,23 @@ export function useDecryptedMedia(attachment) {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [attachment?.url, attachment?.key, attachment?.iv, attachment?.mime, attachment?.previewUrl]);
+  }, [attachment?.url, attachment?.key, attachment?.iv, attachment?.mime, preview]);
 
-  return { url, state };
+  /** Called when a previewUrl fails to render, so decryption can take over. */
+  const dropPreview = () => {
+    if (attachment?.previewUrl && !dropped) {
+      setDropped(true);
+      setUrl(null);
+      setState('idle');
+    }
+  };
+
+  return { url, state, dropPreview };
 }
 
 export function Attachment({ attachment, meta, isMine, all = [], index = 0 }) {
   const openLightbox = useUI((s) => s.openLightbox);
-  const { url, state } = useDecryptedMedia(attachment);
+  const { url, state, dropPreview } = useDecryptedMedia(attachment);
 
   const width = attachment.width || meta?.width;
   const height = attachment.height || meta?.height;
@@ -85,6 +101,7 @@ export function Attachment({ attachment, meta, isMine, all = [], index = 0 }) {
             transition={{ duration: 0.35 }}
             src={url}
             alt={attachment.name || 'Photo'}
+            onError={dropPreview}
             className="h-full w-full object-cover"
             draggable={false}
           />
@@ -101,6 +118,7 @@ export function Attachment({ attachment, meta, isMine, all = [], index = 0 }) {
         {state === 'ready' && url ? (
           <video
             src={url}
+            onError={dropPreview}
             controls
             playsInline
             preload="metadata"

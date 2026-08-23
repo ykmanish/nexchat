@@ -83,10 +83,28 @@ sudo chown -R "$USER:$USER" "$APP_DIR" "$DATA_DIR" /var/log/nexchat
 # traverse into it.
 sudo chmod 755 /var/www "$DATA_DIR" "$DATA_DIR/uploads"
 
+# Clone if absent, otherwise bring an existing checkout up to date. Only
+# cloning when .git is missing leaves a stale tree from an earlier run, and
+# the nginx configs copied below would then be missing or out of date.
 if [ ! -d "$APP_DIR/.git" ]; then
   say "Cloning $REPO"
   git clone "$REPO" "$APP_DIR"
+else
+  say "Updating existing checkout"
+  git -C "$APP_DIR" fetch origin main
+  git -C "$APP_DIR" reset --hard origin/main
 fi
+echo "at $(git -C "$APP_DIR" rev-parse --short HEAD) on $(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD)"
+
+# Fail loudly here rather than letting `cp` fail three lines later with a
+# bare "No such file or directory".
+for f in nginx-chax.nexarrow.eu.bootstrap.conf nginx-chax.nexarrow.eu.conf ecosystem.config.cjs; do
+  if [ ! -f "$APP_DIR/deploy/$f" ]; then
+    warn "deploy/$f is missing from the checkout."
+    warn "Commit and push the deploy/ directory, then re-run this script."
+    exit 1
+  fi
+done
 
 # ── nginx (bootstrap, HTTP only) ────────────────────────────────────────────
 say "Installing bootstrap nginx site"

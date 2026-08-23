@@ -49,6 +49,7 @@ export function MessageActions({ conversation }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, origin: 'top left' });
+  const menuRef = useRef(null);
 
   const message = contextMenu?.message;
   const isMine = contextMenu?.isMine;
@@ -76,6 +77,34 @@ export function MessageActions({ conversation }) {
       origin: (flipUp ? 'bottom ' : 'top ') + originX,
     });
   }, [contextMenu]);
+
+  /* Dismissal lives on the document rather than on the scrim.
+     The scrim is a framer-motion element, so its React handler is wrapped and
+     does not reliably receive a plain pointer event; and because a long-press
+     opens this menu while the finger is still down, the scrim mounts under
+     that finger and the release would close it instantly. Arming on the first
+     pointerup consumes the gesture that opened the menu, so only a genuine
+     new press outside the panel dismisses it. */
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+
+    let armed = false;
+    const arm = () => {
+      armed = true;
+    };
+    const onDown = (e) => {
+      if (!armed) return;
+      if (menuRef.current?.contains(e.target)) return;
+      closeContextMenu();
+    };
+
+    document.addEventListener('pointerup', arm, { once: true, capture: true });
+    document.addEventListener('pointerdown', onDown, true);
+    return () => {
+      document.removeEventListener('pointerup', arm, true);
+      document.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [contextMenu, closeContextMenu]);
 
   useEffect(() => {
     if (!contextMenu) return undefined;
@@ -176,7 +205,7 @@ export function MessageActions({ conversation }) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              onClick={closeContextMenu}
+              /* Purely visual — dismissal is handled on the document above. */
               onContextMenu={(e) => {
                 e.preventDefault();
                 closeContextMenu();
@@ -189,6 +218,7 @@ export function MessageActions({ conversation }) {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.12 } }}
               transition={{ type: 'spring', damping: 22, stiffness: 420, mass: 0.6 }}
+              ref={menuRef}
               style={{ top: pos.top, left: pos.left, transformOrigin: pos.origin }}
               className="fixed z-[95]"
             >

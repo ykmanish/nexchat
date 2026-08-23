@@ -114,7 +114,7 @@ export function Lightbox() {
 }
 
 function LightboxItem({ attachment, onClose }) {
-  const { url, state } = useDecryptedMedia(attachment);
+  const { url, state, dropPreview } = useDecryptedMedia(attachment);
 
   if (state !== 'ready' || !url) {
     return (
@@ -131,6 +131,7 @@ function LightboxItem({ attachment, onClose }) {
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
         src={url}
+        onError={dropPreview}
         controls
         autoPlay
         playsInline
@@ -149,6 +150,7 @@ function LightboxItem({ attachment, onClose }) {
       dragElastic={0.4}
       onDragEnd={(_e, info) => Math.abs(info.offset.y) > 130 && onClose()}
       src={url}
+      onError={dropPreview}
       alt={attachment.name || 'Photo'}
       className="max-h-full max-w-full object-contain"
       draggable={false}
