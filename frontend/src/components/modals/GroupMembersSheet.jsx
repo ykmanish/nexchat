@@ -189,7 +189,7 @@ export function GroupMembersSheet({ open, onClose, conversation: initial }) {
                   <span
                     className={cn(
                       'grid h-6 w-6 place-items-center rounded-full border-2 transition-colors',
-                      on ? 'border-brand bg-brand text-white' : 'border-line-strong'
+                      on ? 'border-brand bg-brand text-brand-ink' : 'border-line-strong'
                     )}
                   >
                     {on && <UserPlus size={12} />}
@@ -242,7 +242,7 @@ export function GroupMembersSheet({ open, onClose, conversation: initial }) {
                 }}
                 className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-surface-2"
               >
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-white">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-brand-ink">
                   <UserPlus size={19} />
                 </span>
                 <span className="text-[15px] font-medium text-brand-strong">Add members</span>

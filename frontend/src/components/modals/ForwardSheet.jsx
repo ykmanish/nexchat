@@ -123,7 +123,7 @@ export function ForwardSheet({ open, onClose, messages = [] }) {
                 className={cn(
                   'grid h-6 w-6 place-items-center rounded-full border-2 transition-colors',
                   active
-                    ? 'border-brand bg-brand text-white'
+                    ? 'border-brand bg-brand text-brand-ink'
                     : 'border-line-strong'
                 )}
               >

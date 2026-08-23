@@ -137,7 +137,7 @@ function RailButton({ icon: Icon, label, active, badge = 0, onClick }) {
       >
         <Icon size={21} strokeWidth={active ? 2.2 : 1.85} />
         {badge > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white ring-2 ring-app">
+          <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold text-brand-ink ring-2 ring-app">
             {badge > 99 ? '99+' : badge}
           </span>
         )}

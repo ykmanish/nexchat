@@ -552,7 +552,7 @@ export function Composer({ conversation, onSent }) {
                   type="button"
                   whileTap={{ scale: 0.9 }}
                   onClick={sendVoiceNote}
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-white"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-brand-ink"
                 >
                   <SendHorizontal size={18} strokeWidth={2.3} />
                 </motion.button>
@@ -639,7 +639,7 @@ export function Composer({ conversation, onSent }) {
                   aria-label={canSend ? 'Send' : 'Record a voice message'}
                   className={cn(
                     'relative grid h-[46px] w-[46px] shrink-0 place-items-center overflow-hidden rounded-full transition-colors duration-200 disabled:opacity-40',
-                    'bg-brand text-white hover:bg-brand-strong'
+                    'bg-brand text-brand-ink hover:bg-brand-hover'
                   )}
                 >
                   <motion.span

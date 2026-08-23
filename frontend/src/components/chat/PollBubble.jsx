@@ -118,7 +118,7 @@ export function PollBubble({ message, payload, isMine }) {
                   className={cn(
                     'grid h-[18px] w-[18px] shrink-0 place-items-center border-2 transition-colors',
                     poll.multiple ? 'rounded-[5px]' : 'rounded-full',
-                    chosen ? 'border-brand bg-brand text-white' : 'border-current opacity-40'
+                    chosen ? 'border-brand bg-brand text-brand-ink' : 'border-current opacity-40'
                   )}
                 >
                   {chosen && <Check size={11} strokeWidth={3.5} />}

@@ -107,7 +107,7 @@ export default function ProfileSettingsPage() {
           className="relative"
         >
           <Avatar src={user?.avatar} name={user?.name} color={user?.avatarColor} size="3xl" />
-          <span className="absolute bottom-1 right-1 grid h-11 w-11 place-items-center rounded-full bg-brand text-white ring-4 ring-app">
+          <span className="absolute bottom-1 right-1 grid h-11 w-11 place-items-center rounded-full bg-brand text-brand-ink ring-4 ring-app">
             {uploading ? (
               <Loader2 size={18} className="animate-spin" />
             ) : (

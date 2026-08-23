@@ -214,7 +214,7 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
             online={online}
           />
           {conversation.type === 'community' && (
-            <span className="absolute -bottom-0.5 -right-0.5 grid h-[18px] w-[18px] place-items-center rounded-full bg-brand text-white ring-2 ring-surface">
+            <span className="absolute -bottom-0.5 -right-0.5 grid h-[18px] w-[18px] place-items-center rounded-full bg-brand text-brand-ink ring-2 ring-surface">
               <Users size={10} strokeWidth={3} />
             </span>
           )}
@@ -273,7 +273,7 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
                   animate={{ scale: 1, opacity: 1 }}
                   className={cn(
                     'grid h-[20px] min-w-[20px] place-items-center rounded-full px-1.5 text-[11px] font-semibold',
-                    conversation.muted ? 'bg-ink-faint text-white' : 'bg-brand text-white'
+                    conversation.muted ? 'bg-ink-faint text-white' : 'bg-brand text-brand-ink'
                   )}
                 >
                   {unread > 99 ? '99+' : unread}

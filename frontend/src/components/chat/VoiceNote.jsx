@@ -93,7 +93,7 @@ export function VoiceNote({ attachment, message, isMine }) {
         disabled={state !== 'ready'}
         className={cn(
           'grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors',
-          isMine ? 'bg-black/15 text-white' : 'bg-brand text-white',
+          isMine ? 'bg-black/15 text-white' : 'bg-brand text-brand-ink',
           state !== 'ready' && 'opacity-50'
         )}
         aria-label={playing ? 'Pause' : 'Play'}

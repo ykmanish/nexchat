@@ -44,7 +44,7 @@ export function StoryRail() {
               </span>
             )}
             {mine && (
-              <span className="absolute -bottom-0.5 -right-0.5 grid h-[19px] w-[19px] place-items-center rounded-full bg-brand text-white ring-2 ring-surface-2">
+              <span className="absolute -bottom-0.5 -right-0.5 grid h-[19px] w-[19px] place-items-center rounded-full bg-brand text-brand-ink ring-2 ring-surface-2">
                 <Plus size={12} strokeWidth={3} />
               </span>
             )}

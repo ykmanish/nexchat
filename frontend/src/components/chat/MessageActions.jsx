@@ -58,7 +58,11 @@ export function MessageActions({ conversation }) {
   const message = contextMenu?.message;
   const isMine = contextMenu?.isMine;
 
-  useEffect(() => {
+  /* Layout effect, not effect: the clamp below is also a layout effect, and
+     effects of the same kind run in declaration order. As a plain useEffect
+     this ran *after* the clamp, so the clamp corrected a stale position and
+     was then overwritten by this estimate. */
+  useLayoutEffect(() => {
     if (!contextMenu) return;
 
     const vw = window.innerWidth;
@@ -90,18 +94,23 @@ export function MessageActions({ conversation }) {
   useLayoutEffect(() => {
     if (!contextMenu || !menuRef.current) return;
 
-    const rect = menuRef.current.getBoundingClientRect();
-    const vh = window.innerHeight;
+    /* `offsetHeight`, not getBoundingClientRect().height. The menu animates in
+       from scale 0.88, and a bounding rect includes that transform — so the
+       measured height grew on every frame, each measurement moved the menu,
+       and moving it re-ran this effect. That feedback loop is what made the
+       menu flicker while opening. offsetHeight is the untransformed layout
+       height and is stable from the first frame. */
+    const height = menuRef.current.offsetHeight;
+    const maxTop = Math.max(PAD, window.innerHeight - PAD - height);
 
-    let top = null;
-    if (rect.height + PAD * 2 >= vh) top = PAD; // taller than the screen
-    else if (rect.bottom > vh - PAD) top = vh - PAD - rect.height;
-    else if (rect.top < PAD) top = PAD;
-
-    if (top !== null && Math.abs(top - rect.top) > 1) {
-      setPos((prev) => ({ ...prev, top }));
-    }
-  }, [contextMenu, pos.top]);
+    setPos((prev) => {
+      const top = Math.min(Math.max(PAD, prev.top), maxTop);
+      // Returning the same object when nothing moved keeps React from
+      // scheduling a pointless render.
+      return top === prev.top ? prev : { ...prev, top };
+    });
+    // Deliberately not keyed on `pos.top`: that is what closed the loop.
+  }, [contextMenu]);
 
   /* Dismissal lives on the document rather than on the scrim.
      The scrim is a framer-motion element, so its React handler is wrapped and
@@ -127,9 +136,13 @@ export function MessageActions({ conversation }) {
     };
 
     document.addEventListener('pointerup', arm, { once: true, capture: true });
+    // Android ends a claimed long-press with pointercancel rather than
+    // pointerup; without this the menu would never become dismissable.
+    document.addEventListener('pointercancel', arm, { once: true, capture: true });
     document.addEventListener('pointerdown', onDown, true);
     return () => {
       document.removeEventListener('pointerup', arm, true);
+      document.removeEventListener('pointercancel', arm, true);
       document.removeEventListener('pointerdown', onDown, true);
     };
   }, [contextMenu, closeContextMenu, confirmDelete]);

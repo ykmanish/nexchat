@@ -65,7 +65,7 @@ export default function NotificationsPage() {
     <SettingsShell title="Notifications" subtitle="When and how we should nudge you">
       <div className="mb-5 rounded-2xl bg-brand-tint p-5">
         <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-white">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-brand-ink">
             <BellRing size={19} />
           </span>
           <div className="min-w-0 flex-1">

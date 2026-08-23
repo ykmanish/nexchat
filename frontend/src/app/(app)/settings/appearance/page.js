@@ -167,7 +167,7 @@ export default function AppearancePage() {
                   >
                     {active && (
                       <span className="absolute inset-0 z-[2] grid place-items-center">
-                        <span className="grid h-6 w-6 place-items-center rounded-full bg-brand text-white">
+                        <span className="grid h-6 w-6 place-items-center rounded-full bg-brand text-brand-ink">
                           <Check size={14} strokeWidth={3} />
                         </span>
                       </span>

@@ -72,7 +72,7 @@ function NavTab({ icon: Icon, label, active, badge = 0, onClick }) {
           )}
         />
         {badge > 0 && (
-          <span className="absolute right-1.5 top-[-2px] z-[2] grid h-[16px] min-w-[16px] place-items-center rounded-full bg-brand px-[3px] text-[9.5px] font-bold leading-none text-white ring-2 ring-surface">
+          <span className="absolute right-1.5 top-[-2px] z-[2] grid h-[16px] min-w-[16px] place-items-center rounded-full bg-brand px-[3px] text-[9.5px] font-bold leading-none text-brand-ink ring-2 ring-surface">
             {badge > 99 ? '99+' : badge}
           </span>
         )}

@@ -233,7 +233,7 @@ export default function LinkDevicePage() {
                 <div className="text-center">
                   <div className="relative mx-auto mb-3 grid h-16 w-16 place-items-center">
                     <span className="absolute inset-0 animate-pulse-ring rounded-full bg-brand/40" />
-                    <span className="relative grid h-16 w-16 place-items-center rounded-full bg-brand text-white">
+                    <span className="relative grid h-16 w-16 place-items-center rounded-full bg-brand text-brand-ink">
                       {status === 'linking' ? (
                         <motion.div
                           animate={{ rotate: 360 }}

@@ -52,7 +52,7 @@ export function UnlockScreen() {
         <div className="mb-6 text-center">
           <div className="relative mx-auto mb-4 w-fit">
             <Avatar src={user?.avatar} name={user?.name} color={user?.avatarColor} size="xl" />
-            <span className="absolute -bottom-1 -right-1 grid h-8 w-8 place-items-center rounded-full bg-brand text-white ring-4 ring-surface">
+            <span className="absolute -bottom-1 -right-1 grid h-8 w-8 place-items-center rounded-full bg-brand text-brand-ink ring-4 ring-surface">
               <Lock size={15} strokeWidth={2.4} />
             </span>
           </div>

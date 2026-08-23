@@ -115,7 +115,7 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
         <span
           className={cn(
             'mr-2 mt-3 grid h-5 w-5 shrink-0 place-items-center self-start rounded-full border-2 transition-colors',
-            selected ? 'border-brand bg-brand text-white' : 'border-line-strong'
+            selected ? 'border-brand bg-brand text-brand-ink' : 'border-line-strong'
           )}
         >
           {selected && <Check size={12} strokeWidth={3.5} />}

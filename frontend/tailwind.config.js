@@ -36,6 +36,7 @@ module.exports = {
           strong: 'var(--accent-strong)',
           deep: 'var(--accent-deep)',
           ink: 'var(--accent-ink)',
+          hover: 'var(--accent-hover)',
           tint: 'var(--accent-tint)',
         },
         // Fixed WhatsApp-family greens, for places that must not shift.

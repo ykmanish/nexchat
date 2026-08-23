@@ -64,7 +64,7 @@ export default function StatusPage() {
               <Avatar src={user?.avatar} name={user?.name} color={user?.avatarColor} size="lg" />
             )}
             {!mine && (
-              <span className="absolute -bottom-0.5 -right-0.5 grid h-[22px] w-[22px] place-items-center rounded-full bg-brand text-white ring-[3px] ring-app">
+              <span className="absolute -bottom-0.5 -right-0.5 grid h-[22px] w-[22px] place-items-center rounded-full bg-brand text-brand-ink ring-[3px] ring-app">
                 <Plus size={13} strokeWidth={3} />
               </span>
             )}

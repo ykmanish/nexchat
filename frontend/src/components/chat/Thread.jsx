@@ -219,7 +219,7 @@ export function Thread({ conversationId }) {
           >
             <ArrowDown size={19} strokeWidth={2.2} />
             {newCount > 0 && (
-              <span className="absolute -top-1.5 grid h-[19px] min-w-[19px] place-items-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-white">
+              <span className="absolute -top-1.5 grid h-[19px] min-w-[19px] place-items-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-ink">
                 {newCount > 99 ? '99+' : newCount}
               </span>
             )}

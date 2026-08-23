@@ -210,7 +210,7 @@ function PersonRow({ person, onClick, busy, selected, trailing }) {
         <span
           className={cn(
             'grid h-6 w-6 place-items-center rounded-full border-2 transition-colors',
-            selected ? 'border-brand bg-brand text-white' : 'border-line-strong'
+            selected ? 'border-brand bg-brand text-brand-ink' : 'border-line-strong'
           )}
         >
           {selected && <Check size={14} strokeWidth={3} />}

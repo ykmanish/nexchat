@@ -52,7 +52,7 @@ export default function DevicesPage() {
           feedback('open');
           setScanning(true);
         }}
-        className="mb-5 flex w-full items-center gap-4 rounded-3xl bg-brand p-5 text-left text-white shadow-fab"
+        className="mb-5 flex w-full items-center gap-4 rounded-3xl bg-brand p-5 text-left text-brand-ink shadow-fab"
       >
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-black/10">
           <QrCode size={24} strokeWidth={2} />

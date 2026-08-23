@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 
 const VARIANTS = {
-  primary: 'bg-brand text-white hover:bg-brand-strong active:bg-brand-strong',
+  primary: 'bg-brand text-brand-ink hover:bg-brand-hover active:bg-brand-hover',
   secondary: 'bg-surface-2 text-ink border border-line hover:bg-surface-3',
   ghost: 'text-ink hover:bg-surface-2',
   subtle: 'bg-surface-3 text-ink hover:brightness-95 dark:hover:brightness-110',
@@ -117,7 +117,7 @@ export const IconButton = forwardRef(function IconButton(
     >
       <Icon size={iconSize} strokeWidth={1.9} />
       {badge != null && badge > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white ring-2 ring-app">
+        <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-brand px-1 text-[10px] font-semibold text-brand-ink ring-2 ring-app">
           {badge > 99 ? '99+' : badge}
         </span>
       )}
@@ -189,8 +189,8 @@ export function Fab({ icon: Icon, label, onClick, className, size = 'md' }) {
         onClick?.();
       }}
       className={cn(
-        'grid place-items-center rounded-full bg-brand text-white shadow-card',
-        'transition-colors hover:bg-brand-strong',
+        'grid place-items-center rounded-full bg-brand text-brand-ink shadow-card',
+        'transition-colors hover:bg-brand-hover',
         dims,
         className
       )}
