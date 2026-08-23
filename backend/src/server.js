@@ -20,7 +20,7 @@ async function start() {
     if (err.code === 'EADDRINUSE') {
       logger.error('Port ' + env.port + ' is already in use.');
       logger.error(
-        'Another NexChat API is probably still running. Stop it, or set PORT to something else in .env.'
+        'Another Chax API is probably still running. Stop it, or set PORT to something else in .env.'
       );
     } else {
       logger.error('Server error: ' + err.message);

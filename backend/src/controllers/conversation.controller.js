@@ -7,8 +7,46 @@ import { getIO } from '../sockets/io.js';
 
 const POPULATE_USER = 'name username avatar avatarColor about presence lastSeen identityPublicKey securityCode privacy';
 
+/**
+ * Applies a user's privacy settings to the copy of them we are about to send
+ * to someone else.
+ *
+ * `User.publicProfile()` does this, but it is a document method and the
+ * conversation payload is built from `toObject()` plain objects — so the raw
+ * populated user was going out untouched and "Nobody" was never honoured
+ * anywhere a conversation was rendered.
+ */
+function visibleUser(user, viewer) {
+  if (!user) return user;
+
+  const privacy = user.privacy || {};
+  const isSelf = String(user._id) === String(viewer?._id || viewer);
+  const contacts = (viewer?.contacts || []).map((c) => String(c.user || c));
+  const isContact = contacts.includes(String(user._id));
+
+  const allow = (rule) =>
+    isSelf || rule === undefined || rule === 'everyone' || (rule === 'contacts' && isContact);
+
+  return {
+    _id: user._id,
+    id: user._id,
+    name: user.name,
+    username: user.username,
+    avatar: allow(privacy.avatar) ? user.avatar : null,
+    avatarColor: user.avatarColor,
+    about: allow(privacy.about) ? user.about || '' : '',
+    presence: allow(privacy.lastSeen) ? user.presence : 'offline',
+    lastSeen: allow(privacy.lastSeen) ? user.lastSeen : null,
+    identityPublicKey: user.identityPublicKey,
+    securityCode: user.securityCode,
+    // Needed by the client so it can hide ticks for people who turned
+    // read receipts off.
+    readReceipts: privacy.readReceipts !== false,
+  };
+}
+
 /** Reshapes a conversation into the flat form the client renders from. */
-export function serialize(conv, userId) {
+export function serialize(conv, userId, viewer = null) {
   const doc = conv.toObject ? conv.toObject() : conv;
   const me = (doc.participants || []).find((p) => String(p.user?._id || p.user) === String(userId));
 
@@ -16,7 +54,8 @@ export function serialize(conv, userId) {
     (p) => String(p.user?._id || p.user) !== String(userId)
   );
 
-  const peer = doc.type === 'direct' ? others[0]?.user : null;
+  const seenBy = viewer || { _id: userId, contacts: [] };
+  const peer = doc.type === 'direct' ? visibleUser(others[0]?.user, seenBy) : null;
 
   return {
     id: doc._id,
@@ -26,23 +65,9 @@ export function serialize(conv, userId) {
     avatar: doc.type === 'direct' ? peer?.avatar || null : doc.avatar,
     avatarColor: doc.type === 'direct' ? peer?.avatarColor || '#F4C430' : doc.avatarColor,
     about: doc.type === 'direct' ? peer?.about || '' : doc.about,
-    peer: peer
-      ? {
-          id: peer._id,
-          _id: peer._id,
-          name: peer.name,
-          username: peer.username,
-          avatar: peer.avatar,
-          avatarColor: peer.avatarColor,
-          about: peer.about,
-          presence: peer.presence,
-          lastSeen: peer.lastSeen,
-          identityPublicKey: peer.identityPublicKey,
-          securityCode: peer.securityCode,
-        }
-      : null,
+    peer: peer || null,
     participants: (doc.participants || []).map((p) => ({
-      user: p.user,
+      user: visibleUser(p.user, seenBy),
       role: p.role,
       joinedAt: p.joinedAt,
       leftAt: p.leftAt,
@@ -133,7 +158,7 @@ export const listConversations = asyncHandler(async (req, res) => {
     .limit(Math.min(Number(limit), 200))
     .skip(Number(skip));
 
-  let out = convs.map((c) => serialize(c, req.user._id));
+  let out = convs.map((c) => serialize(c, req.user._id, req.user));
 
   const wantArchived = String(archived) === 'true';
   out = out.filter((c) => c.archived === wantArchived);
@@ -149,7 +174,7 @@ export const listConversations = asyncHandler(async (req, res) => {
 
 export const getConversation = asyncHandler(async (req, res) => {
   const conv = await loadConversation(req.params.id, req.user._id);
-  res.json({ success: true, conversation: serialize(conv, req.user._id) });
+  res.json({ success: true, conversation: serialize(conv, req.user._id, req.user) });
 });
 
 /* ────────────────────────────── create paths ────────────────────────────── */
@@ -190,7 +215,7 @@ export const createDirect = asyncHandler(async (req, res) => {
     });
   }
 
-  res.status(201).json({ success: true, conversation: serialize(conv, req.user._id) });
+  res.status(201).json({ success: true, conversation: serialize(conv, req.user._id, req.user) });
 });
 
 export const createGroup = asyncHandler(async (req, res) => {
@@ -230,7 +255,7 @@ export const createGroup = asyncHandler(async (req, res) => {
     })
   );
 
-  res.status(201).json({ success: true, conversation: serialize(populated, req.user._id) });
+  res.status(201).json({ success: true, conversation: serialize(populated, req.user._id, req.user) });
 });
 
 export const createCommunity = asyncHandler(async (req, res) => {
@@ -282,7 +307,7 @@ export const createCommunity = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    conversation: serialize(populated, req.user._id),
+    conversation: serialize(populated, req.user._id, req.user),
     generalId: general._id,
   });
 });
@@ -316,7 +341,7 @@ export const updateConversation = asyncHandler(async (req, res) => {
 
   if (name !== undefined) await postSystemMessage(conv, 'group.renamed', req.user._id, [], { name });
 
-  const payload = serialize(conv, req.user._id);
+  const payload = serialize(conv, req.user._id, req.user);
   getIO()?.to('conversation:' + conv._id).emit('conversation:updated', {
     conversationId: String(conv._id),
     patch: { name: conv.name, about: conv.about, avatar: conv.avatar, settings: conv.settings },
@@ -364,7 +389,7 @@ export const addMembers = asyncHandler(async (req, res) => {
     io?.to('user:' + u._id).emit('conversation:new', { conversation: serialize(populated, u._id) })
   );
 
-  res.json({ success: true, conversation: serialize(populated, req.user._id) });
+  res.json({ success: true, conversation: serialize(populated, req.user._id, req.user) });
 });
 
 export const removeMember = asyncHandler(async (req, res) => {
@@ -559,7 +584,7 @@ export const joinByInvite = asyncHandler(async (req, res) => {
     const populated = await Conversation.findById(conv._id)
       .populate('participants.user', POPULATE_USER)
       .populate('lastMessage');
-    return res.json({ success: true, conversation: serialize(populated, req.user._id), already: true });
+    return res.json({ success: true, conversation: serialize(populated, req.user._id, req.user), already: true });
   }
 
   if (existing) {
@@ -577,7 +602,7 @@ export const joinByInvite = asyncHandler(async (req, res) => {
     .populate('participants.user', POPULATE_USER)
     .populate('lastMessage');
 
-  res.json({ success: true, conversation: serialize(populated, req.user._id) });
+  res.json({ success: true, conversation: serialize(populated, req.user._id, req.user) });
 });
 
 export { postSystemMessage, loadConversation };

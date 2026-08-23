@@ -26,7 +26,7 @@ export default function NotificationsPage() {
   }, []);
 
   /** Turning this on registers the worker and hands the server a subscription,
-   *  so messages arrive even with every NexChat tab closed. */
+   *  so messages arrive even with every Chax tab closed. */
   async function turnOnPush() {
     setBusy(true);
     try {
@@ -76,7 +76,7 @@ export default function NotificationsPage() {
                   ? 'Push notifications are on'
                   : perm === 'denied'
                     ? 'Notifications are blocked'
-                    : 'Get messages while NexChat is closed'}
+                    : 'Get messages while Chax is closed'}
             </p>
             <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
               {!supported

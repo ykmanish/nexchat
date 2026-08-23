@@ -10,6 +10,40 @@ import { getIO } from '../sockets/io.js';
 const isContact = (me, otherId) =>
   (me.contacts || []).some((c) => String(c) === String(otherId));
 
+
+/**
+ * Tells everyone who shares a chat with this user that their profile changed.
+ *
+ * A single room broadcast cannot be used: what each person is allowed to see
+ * depends on whether *they* have this user as a contact, so one payload would
+ * either leak a contacts-only avatar to strangers or hide it from real
+ * contacts. One indexed reverse lookup gives us the contact set, and the two
+ * groups then get their own correctly-filtered copy.
+ */
+async function broadcastProfile(user) {
+  const io = getIO();
+  if (!io) return;
+
+  const [convs, contacts] = await Promise.all([
+    Conversation.find({ memberIds: user._id }).select('memberIds').lean(),
+    User.find({ contacts: user._id }).select('_id').lean(),
+  ]);
+
+  const contactIds = new Set(contacts.map((c) => String(c._id)));
+  const audience = new Set();
+  convs.forEach((c) => (c.memberIds || []).forEach((m) => audience.add(String(m))));
+  audience.delete(String(user._id));
+
+  const forContacts = user.publicProfile(true);
+  const forStrangers = user.publicProfile(false);
+
+  audience.forEach((id) => {
+    io.to('user:' + id).emit('user:updated', {
+      user: contactIds.has(id) ? forContacts : forStrangers,
+    });
+  });
+}
+
 export const searchUsers = asyncHandler(async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ success: true, users: [] });
@@ -49,13 +83,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   await req.user.save();
 
-  const convs = await Conversation.find({ memberIds: req.user._id }).select('_id').lean();
-  const io = getIO();
-  convs.forEach((c) =>
-    io?.to('conversation:' + c._id).emit('user:updated', {
-      user: req.user.publicProfile(true),
-    })
-  );
+  await broadcastProfile(req.user);
 
   res.json({ success: true, user: req.user.toJSON() });
 });
@@ -77,6 +105,11 @@ export const updatePrivacy = asyncHandler(async (req, res) => {
     if (k in req.user.privacy) req.user.privacy[k] = v;
   });
   await req.user.save();
+
+  // Push the newly-filtered profile out, so turning something off takes effect
+  // on other people's screens immediately rather than on their next reload.
+  await broadcastProfile(req.user);
+
   res.json({ success: true, privacy: req.user.privacy });
 });
 
@@ -102,11 +135,7 @@ export const uploadAvatarImage = asyncHandler(async (req, res) => {
   req.user.avatar = '/uploads/avatars/' + outName;
   await req.user.save();
 
-  const convs = await Conversation.find({ memberIds: req.user._id }).select('_id').lean();
-  const io = getIO();
-  convs.forEach((c) =>
-    io?.to('conversation:' + c._id).emit('user:updated', { user: req.user.publicProfile(true) })
-  );
+  await broadcastProfile(req.user);
 
   res.json({ success: true, avatar: req.user.avatar, user: req.user.toJSON() });
 });
@@ -117,6 +146,9 @@ export const removeAvatar = asyncHandler(async (req, res) => {
   }
   req.user.avatar = null;
   await req.user.save();
+
+  await broadcastProfile(req.user);
+
   res.json({ success: true, user: req.user.toJSON() });
 });
 

@@ -97,7 +97,7 @@ export default function StarredPage() {
                 <button
                   type="button"
                   onClick={() => unstar(message)}
-                  className="shrink-0 rounded-full p-1 text-brand transition-colors hover:text-ink-faint"
+                  className="shrink-0 rounded-full p-1 text-brand-strong transition-colors hover:text-ink-faint"
                   aria-label="Unstar"
                 >
                   <Star size={15} fill="currentColor" />

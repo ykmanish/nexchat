@@ -43,7 +43,7 @@ export default function DevicesPage() {
   return (
     <SettingsShell
       title="Linked devices"
-      subtitle="Use NexChat on a laptop, tablet or second phone"
+      subtitle="Use Chax on a laptop, tablet or second phone"
     >
       <motion.button
         type="button"

@@ -22,14 +22,14 @@ const outfit = Outfit({
 
 export const metadata = {
   title: {
-    default: 'NexChat',
-    template: '%s · NexChat',
+    default: 'Chax',
+    template: '%s · Chax',
   },
   description:
     'A fast, end-to-end encrypted messenger. Your conversations stay between you and the people in them.',
-  applicationName: 'NexChat',
+  applicationName: 'Chax',
   manifest: '/manifest.json',
-  appleWebApp: { capable: true, title: 'NexChat', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'Chax', statusBarStyle: 'default' },
   formatDetection: { telephone: false },
   icons: {
     icon: [

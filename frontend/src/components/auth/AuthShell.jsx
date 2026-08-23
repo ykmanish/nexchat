@@ -50,7 +50,7 @@ export function AuthShell({ children }) {
 
         <div className="relative flex items-center gap-3">
           <Logo size={40} />
-          <span className="font-display text-[22px] font-semibold tracking-tight">NexChat</span>
+          <span className="font-display text-[22px] font-semibold tracking-tight">Chax</span>
         </div>
 
         <div className="relative max-w-[440px]">

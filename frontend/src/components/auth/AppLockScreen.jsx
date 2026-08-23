@@ -90,7 +90,7 @@ export function AppLockScreen({ onUnlocked }) {
         <p className="mt-1 text-center text-[12.5px] text-ink-muted">
           {attempts > 0
             ? attempts + (attempts === 1 ? ' failed attempt' : ' failed attempts')
-            : 'NexChat is locked'}
+            : 'Chax is locked'}
         </p>
 
         {/* dots */}

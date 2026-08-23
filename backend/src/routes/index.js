@@ -13,7 +13,7 @@ const router = Router();
 
 router.get('/', (_req, res) =>
   res.json({
-    name: 'NexChat API',
+    name: 'Chax API',
     version: '1.0.0',
     docs: '/api/health',
     encryption: 'end-to-end (AES-GCM-256 + ECDH P-256)',

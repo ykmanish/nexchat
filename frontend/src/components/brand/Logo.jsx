@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 /**
- * The NexChat mark, from `public/icon.png`.
+ * The Chax mark, from `public/icon.png`.
  *
  * Served from the pre-scaled PNGs rather than the 2249px original — the mark
  * renders between 26px and 72px, so shipping the full-size file would cost
@@ -31,7 +31,7 @@ export function Logo({ size = 44, className, animated = false, rounded = true })
     >
       <img
         src={src}
-        alt="NexChat"
+        alt="Chax"
         width={size}
         height={size}
         draggable={false}
@@ -52,7 +52,7 @@ export function Wordmark({ className, size = 'md', showIcon = true }) {
     <div className={cn('flex items-center gap-2.5', className)}>
       {showIcon && <Logo size={s.logo} />}
       <span className={cn('font-display font-semibold tracking-tight', s.text)}>
-        Nex<span className="text-brand">Chat</span>
+        Nex<span className="text-brand-strong">Chat</span>
       </span>
     </div>
   );

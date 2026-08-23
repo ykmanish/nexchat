@@ -17,7 +17,7 @@ import * as e2ee from '@/lib/e2ee';
 import { cn } from '@/lib/utils';
 
 const STEPS = [
-  'Open NexChat on your phone',
+  'Open Chax on your phone',
   'Go to Settings → Linked devices',
   'Tap "Link a device" and scan this code',
 ];

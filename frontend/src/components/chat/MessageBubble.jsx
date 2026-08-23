@@ -20,7 +20,10 @@ import { LinkPreview } from './LinkPreview';
 import { parseMessageBody, splitInlineCode, firstUrl } from '@/lib/codeblocks';
 import { seedPreview } from '@/lib/linkpreview';
 
-const LONG_PRESS_MS = 380;
+/* 380ms fired while a scroll or a tap was still plausibly in progress, so the
+   menu kept appearing unintentionally. 550ms is roughly what the platform
+   long-press gestures use and reads as deliberate. */
+const LONG_PRESS_MS = 550;
 const MOVE_TOLERANCE = 10;
 
 export function MessageBubble({ message, conversation, currentUserId, selecting }) {

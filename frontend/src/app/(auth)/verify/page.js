@@ -71,7 +71,7 @@ function VerifyInner() {
       await verifyEmail({ email, code: finalCode, password });
       sessionStorage.removeItem('nexchat.pending');
       feedback('success');
-      toast.success('Welcome to NexChat');
+      toast.success('Welcome to Chax');
       router.replace('/chats');
     } catch (err) {
       submittedFor.current = null;

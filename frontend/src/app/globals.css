@@ -28,13 +28,17 @@
     --text-faint: rgb(var(--text-faint-rgb));
 
     /* brand — WhatsApp's fresh green */
-    --accent-rgb: 33 192 99;
+    /* The brand lime from the app icon. It is a *fill* colour: dark ink sits
+       on top of it. As text on a white background it is unreadable (~1.4:1),
+       so `--accent-strong` carries a deep lime for the 51 places that render
+       brand-coloured text. */
+    --accent-rgb: 193 255 114;
     --accent: rgb(var(--accent-rgb));
-    --flash-tint: rgb(var(--accent-rgb) / 0.22);
-    --accent-strong: #1daa61;
-    --accent-deep: #128c7e;
-    --accent-ink: #ffffff;
-    --accent-tint: rgba(33, 192, 99, 0.12);
+    --flash-tint: rgb(var(--accent-rgb) / 0.34);
+    --accent-strong: #4d7c0f;
+    --accent-deep: #3f6212;
+    --accent-ink: #14200a;
+    --accent-tint: rgba(193, 255, 114, 0.34);
 
     /* bubbles — overridden per user preference */
     --bubble-out: #d9fdd3;
@@ -88,13 +92,15 @@
     --text-faint-rgb: 106 119 114;
     --text-faint: rgb(var(--text-faint-rgb));
 
-    --accent-rgb: 33 192 99;
+    /* On a near-black ground the lime is legible as text too, so `strong`
+       stays bright here rather than dropping to the deep variant. */
+    --accent-rgb: 193 255 114;
     --accent: rgb(var(--accent-rgb));
-    --flash-tint: rgb(var(--accent-rgb) / 0.32);
-    --accent-strong: #25d366;
-    --accent-deep: #12854a;
-    --accent-ink: #0a0f0d;
-    --accent-tint: rgba(33, 192, 99, 0.16);
+    --flash-tint: rgb(var(--accent-rgb) / 0.26);
+    --accent-strong: #c1ff72;
+    --accent-deep: #9fe04a;
+    --accent-ink: #14200a;
+    --accent-tint: rgba(193, 255, 114, 0.16);
 
     --bubble-out: #144d37;
     --bubble-out-ink: #e9edef;
@@ -124,13 +130,18 @@
   html {
     -webkit-text-size-adjust: 100%;
     overflow-x: hidden;
+    /* Chrome's pull-to-refresh fires from a downward drag anywhere the page
+       is at scroll-top — including full-screen overlays like the status
+       viewer, where a swipe is a gesture, not a scroll. `none` on body alone
+       is not enough; the behaviour is decided on the scrolling element. */
+    overscroll-behavior: none;
   }
 
   body {
     background: var(--app-bg);
     color: var(--text);
     overflow-x: hidden;
-    overscroll-behavior-y: none;
+    overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-size: calc(15px * var(--font-scale, 1));

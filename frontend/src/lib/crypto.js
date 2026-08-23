@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * NexChat client-side cryptography.
+ * Chax client-side cryptography.
  *
  * Everything here runs in the browser. The server only ever receives public
  * keys and ciphertext — private keys never leave the device except during a
@@ -16,7 +16,7 @@
 
 const subtle = () => {
   if (typeof window === 'undefined' || !window.crypto?.subtle) {
-    throw new Error('Web Crypto is unavailable — NexChat needs HTTPS or localhost.');
+    throw new Error('Web Crypto is unavailable — Chax needs HTTPS or localhost.');
   }
   return window.crypto.subtle;
 };

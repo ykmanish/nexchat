@@ -41,6 +41,12 @@ export function Thread({ conversationId }) {
   const bottomRef = useRef(null);
   const restoreRef = useRef(null);
   const [atBottom, setAtBottom] = useState(true);
+  /* The jump button used to sit at a fixed offset, which collided with the
+     reply preview's close button the moment the composer grew. Measuring it
+     keeps the button clear of a reply bar, staged attachments and a link
+     preview alike. */
+  const composerRef = useRef(null);
+  const [composerH, setComposerH] = useState(72);
   const [newCount, setNewCount] = useState(0);
 
   const canvas = wallpaperClass(conversation?.wallpaper || user?.settings?.wallpaper || 'doodle');
@@ -74,6 +80,15 @@ export function Thread({ conversationId }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastId]);
+
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => setComposerH(entry.contentRect.height));
+    ro.observe(el);
+    setComposerH(el.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, []);
 
   /* ── keep the viewport steady when older pages load in ── */
   useEffect(() => {
@@ -149,7 +164,7 @@ export function Thread({ conversationId }) {
             <div className="mx-4 mb-4 mt-2 flex max-w-[430px] items-start gap-1.5 self-center rounded-lg bg-[#fdf4c8] px-3 py-2 sm:mx-auto dark:bg-[#1d282f]">
               <Lock size={12} className="mt-[3px] shrink-0 text-[#8a7a2f] dark:text-[#ffd279]" />
               <p className="text-[12.5px] leading-relaxed text-[#5c5220] dark:text-[#ffd279]">
-                Messages are end-to-end encrypted. No one outside this chat, not even NexChat,
+                Messages are end-to-end encrypted. No one outside this chat, not even Chax,
                 can read them.
               </p>
             </div>
@@ -199,7 +214,8 @@ export function Thread({ conversationId }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.7, y: 10 }}
             onClick={scrollToBottom}
-            className="absolute bottom-[86px] right-4 z-20 grid h-10 w-10 place-items-center rounded-full bg-surface text-ink-muted shadow-pop"
+            style={{ bottom: composerH + 14 }}
+            className="absolute right-4 z-20 grid h-10 w-10 place-items-center rounded-full bg-surface text-ink-muted shadow-pop"
           >
             <ArrowDown size={19} strokeWidth={2.2} />
             {newCount > 0 && (
@@ -211,11 +227,13 @@ export function Thread({ conversationId }) {
         )}
       </AnimatePresence>
 
-      {selection.length > 0 ? (
-        <SelectionBar conversation={conversation} />
-      ) : (
-        <Composer conversation={conversation} onSent={scrollToBottom} />
-      )}
+      <div ref={composerRef} className="shrink-0">
+        {selection.length > 0 ? (
+          <SelectionBar conversation={conversation} />
+        ) : (
+          <Composer conversation={conversation} onSent={scrollToBottom} />
+        )}
+      </div>
 
       <MessageActions conversation={conversation} />
     </div>

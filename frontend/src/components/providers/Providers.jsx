@@ -10,6 +10,7 @@ import { getSocket, connectSocket } from '@/lib/socket';
 import { unlockAudio, feedback } from '@/lib/sound';
 import { ToastStack } from '@/components/ui/Toast';
 import { applyBubbleTheme, applyFontScale, STATUS_BAR } from '@/lib/theme';
+import { vault } from '@/lib/vault';
 
 export function Providers({ children }) {
   return (
@@ -152,6 +153,14 @@ function SocketBridge() {
             attachments: [],
             reactions: [],
           });
+          // The plaintext is cached on this device; without dropping it the
+          // message would come back on the next reload despite the tombstone.
+          useChat.setState((s) => {
+            const plain = { ...s.plain };
+            delete plain[messageId];
+            return { plain };
+          });
+          vault.removeCached(messageId);
         } else {
           useChat.setState((s) => ({
             messages: {

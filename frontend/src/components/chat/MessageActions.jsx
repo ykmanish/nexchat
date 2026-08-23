@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -46,7 +46,11 @@ export function MessageActions({ conversation }) {
   const deleteMessage = useChat((s) => s.deleteMessage);
   const plain = useChat((s) => s.plain);
 
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  /* The message to delete is captured when Delete is pressed rather than read
+     from `contextMenu` at confirm time: the confirmation dialog sits outside
+     the menu panel, so interacting with it dismisses the menu and would leave
+     `message` undefined by the time the delete runs. */
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, origin: 'top left' });
   const menuRef = useRef(null);
@@ -78,6 +82,27 @@ export function MessageActions({ conversation }) {
     });
   }, [contextMenu]);
 
+  /* The block above positions from an *estimated* height, because the menu has
+     not rendered yet. That estimate assumes a fixed action count, but the list
+     is shorter on someone else's message — so near the bottom of the screen
+     the menu could still overhang. Measure it once it exists and pull it back
+     into view. */
+  useLayoutEffect(() => {
+    if (!contextMenu || !menuRef.current) return;
+
+    const rect = menuRef.current.getBoundingClientRect();
+    const vh = window.innerHeight;
+
+    let top = null;
+    if (rect.height + PAD * 2 >= vh) top = PAD; // taller than the screen
+    else if (rect.bottom > vh - PAD) top = vh - PAD - rect.height;
+    else if (rect.top < PAD) top = PAD;
+
+    if (top !== null && Math.abs(top - rect.top) > 1) {
+      setPos((prev) => ({ ...prev, top }));
+    }
+  }, [contextMenu, pos.top]);
+
   /* Dismissal lives on the document rather than on the scrim.
      The scrim is a framer-motion element, so its React handler is wrapped and
      does not reliably receive a plain pointer event; and because a long-press
@@ -94,6 +119,9 @@ export function MessageActions({ conversation }) {
     };
     const onDown = (e) => {
       if (!armed) return;
+      // The confirm dialog renders outside the panel; tapping it must not
+      // tear down the menu state the dialog is still working from.
+      if (confirmDelete) return;
       if (menuRef.current?.contains(e.target)) return;
       closeContextMenu();
     };
@@ -104,7 +132,7 @@ export function MessageActions({ conversation }) {
       document.removeEventListener('pointerup', arm, true);
       document.removeEventListener('pointerdown', onDown, true);
     };
-  }, [contextMenu, closeContextMenu]);
+  }, [contextMenu, closeContextMenu, confirmDelete]);
 
   useEffect(() => {
     if (!contextMenu) return undefined;
@@ -155,7 +183,7 @@ export function MessageActions({ conversation }) {
     },
     { label: 'Edit', icon: Pencil, hidden: !editable, onClick: () => setEditing(message) },
     { label: 'Select', icon: CheckSquare, onClick: () => toggleSelection(message._id) },
-    { label: 'Delete', icon: Trash2, danger: true, onClick: () => setConfirmDelete(true) },
+    { label: 'Delete', icon: Trash2, danger: true, onClick: () => setConfirmDelete(message) },
   ].filter((a) => !a.hidden);
 
   /* Deleting for everyone is only offered while it can still be honoured. */
@@ -182,15 +210,18 @@ export function MessageActions({ conversation }) {
   ];
 
   async function runDelete(scope) {
+    const target = confirmDelete;
+    if (!target) return;
+
     setDeleting(true);
     try {
-      await deleteMessage(message, scope);
+      await deleteMessage(target, scope);
       toast.success(scope === 'everyone' ? 'Deleted for everyone' : 'Message deleted');
     } catch (err) {
       toast.error(err.message);
     } finally {
       setDeleting(false);
-      setConfirmDelete(false);
+      setConfirmDelete(null);
       closeContextMenu();
     }
   }
@@ -299,9 +330,9 @@ export function MessageActions({ conversation }) {
       </AnimatePresence>
 
       <ChoiceDialog
-        open={confirmDelete}
+        open={!!confirmDelete}
         onClose={() => {
-          setConfirmDelete(false);
+          setConfirmDelete(null);
           closeContextMenu();
         }}
         title="Delete message?"

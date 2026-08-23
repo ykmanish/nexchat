@@ -49,7 +49,7 @@ export const Input = forwardRef(function Input(
           <Icon
             size={18}
             strokeWidth={2}
-            className="shrink-0 text-ink-faint transition-colors group-focus-within:text-brand"
+            className="shrink-0 text-ink-faint transition-colors group-focus-within:text-brand-strong"
           />
         )}
 
@@ -241,7 +241,7 @@ export function RadioRow({ checked, onChange, label, sublabel }) {
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.5, opacity: 0 }}
-            className="text-brand"
+            className="text-brand-strong"
           >
             <Check size={20} strokeWidth={2.6} />
           </motion.span>

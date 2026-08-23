@@ -13,7 +13,7 @@ import { toast } from '@/store/ui';
 import { api } from '@/lib/api';
 import * as e2ee from '@/lib/e2ee';
 import { useDecryptedMedia } from '@/components/chat/Attachment';
-import { cn, chatTime } from '@/lib/utils';
+import { cn, chatTime, bubbleTime } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 
 const BACKGROUNDS = [
@@ -293,12 +293,7 @@ export function StoryViewerSheet({ open, onClose, ring }) {
           />
 
           {ring.isMine && (
-            <div className="safe-bottom flex items-center justify-center gap-2 py-4 text-white/70">
-              <Eye size={16} />
-              <span className="text-[13px]">
-                {current.viewerCount || 0} {current.viewerCount === 1 ? 'view' : 'views'}
-              </span>
-            </div>
+            <StoryViewers story={current} onOpen={() => setPaused(true)} onClose={() => setPaused(false)} />
           )}
         </motion.div>
       )}
@@ -363,4 +358,102 @@ function StoryImage({ attachment }) {
     return <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-white/25 border-t-white" />;
   }
   return <img src={url} alt="Story" className="max-h-full max-w-full object-contain" />;
+}
+
+
+/**
+ * Tap the view count to see who watched.
+ *
+ * The server names only the people who leave read receipts on, so the list can
+ * be shorter than the count; the difference is stated rather than silently
+ * dropped.
+ */
+function StoryViewers({ story, onOpen, onClose }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const count = data?.total ?? story.viewerCount ?? 0;
+
+  async function toggle() {
+    if (open) {
+      setOpen(false);
+      onClose?.();
+      return;
+    }
+    setOpen(true);
+    onOpen?.();
+    if (data) return;
+    setLoading(true);
+    try {
+      const { data: res } = await api.get('/stories/' + story._id + '/viewers');
+      setData(res);
+    } catch {
+      setData({ total: story.viewerCount || 0, hidden: 0, viewers: [] });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={toggle}
+        className="safe-bottom flex w-full items-center justify-center gap-2 py-4 text-white/70 transition-colors hover:text-white"
+        aria-label={count + (count === 1 ? ' view' : ' views') + ', see who'}
+      >
+        <Eye size={16} />
+        <span className="text-[13px]">
+          {count} {count === 1 ? 'view' : 'views'}
+        </span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="absolute inset-x-0 bottom-0 z-10 max-h-[62%] overflow-y-auto rounded-t-3xl bg-surface pb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 flex items-center justify-between border-b border-line bg-surface px-5 py-3.5">
+              <h3 className="text-[15px] font-semibold">
+                Viewed by {count}
+              </h3>
+              <button type="button" onClick={toggle} aria-label="Close" className="rounded-full p-1 text-ink-muted">
+                <X size={18} />
+              </button>
+            </div>
+
+            {loading && <p className="px-5 py-6 text-center text-[13px] text-ink-muted">Loading…</p>}
+
+            {!loading &&
+              (data?.viewers || []).map((v) => (
+                <div key={v.user._id} className="flex items-center gap-3 px-5 py-2.5">
+                  <Avatar src={v.user.avatar} name={v.user.name} color={v.user.avatarColor} size="md" />
+                  <span className="min-w-0 flex-1 truncate text-[15px]">{v.user.name}</span>
+                  <span className="shrink-0 text-[12px] tabular-nums text-ink-faint">
+                    {bubbleTime(v.at)}
+                  </span>
+                </div>
+              ))}
+
+            {!loading && !!data?.hidden && (
+              <p className="px-5 pt-3 text-center text-[12.5px] text-ink-muted">
+                {data.hidden} {data.hidden === 1 ? 'person has' : 'people have'} read receipts
+                off, so {data.hidden === 1 ? 'their name is' : 'their names are'} not shown.
+              </p>
+            )}
+
+            {!loading && !data?.viewers?.length && !data?.hidden && (
+              <p className="px-5 py-8 text-center text-[13.5px] text-ink-muted">No views yet.</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
 }

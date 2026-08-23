@@ -137,7 +137,7 @@ export default function SettingsPage() {
           <ListButton
             icon={ShieldCheck}
             label="How encryption works"
-            sublabel="What NexChat can and cannot see"
+            sublabel="What Chax can and cannot see"
             chevron
             onClick={() =>
               toast.info(
@@ -149,10 +149,10 @@ export default function SettingsPage() {
           <div className="divider mx-5" />
           <ListButton
             icon={HelpCircle}
-            label="About NexChat"
+            label="About Chax"
             sublabel="Version 1.0.0"
             chevron
-            onClick={() => toast.info('NexChat 1.0.0 — built with Next.js, Express and MongoDB.')}
+            onClick={() => toast.info('Chax 1.0.0 — built with Next.js, Express and MongoDB.')}
           />
         </div>
 

@@ -55,7 +55,7 @@ export function DesktopRail() {
         type="button"
         onClick={() => router.push('/chats')}
         className="mb-5 transition-transform hover:scale-105 active:scale-95"
-        aria-label="NexChat"
+        aria-label="Chax"
       >
         <Logo size={34} />
       </button>

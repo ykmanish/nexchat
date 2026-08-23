@@ -75,7 +75,7 @@ export default function PrivacyPage() {
 
       <SettingsGroup
         title="Messaging"
-        footer="Turning read receipts off means you also stop seeing when others read yours. Link previews are fetched through NexChat, so leaving them on tells the server which links you open — the message itself stays encrypted either way."
+        footer="Turning read receipts off means you also stop seeing when others read yours. Link previews are fetched through Chax, so leaving them on tells the server which links you open — the message itself stays encrypted either way."
       >
         <SettingsRow>
           <Switch

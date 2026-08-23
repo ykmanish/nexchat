@@ -12,7 +12,7 @@ export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProd: process.env.NODE_ENV === 'production',
   port: int(process.env.PORT, 5000),
-  appName: process.env.APP_NAME || 'NexChat',
+  appName: process.env.APP_NAME || 'Chax',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
 
   mongoUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/nexchat',
@@ -31,7 +31,7 @@ export const env = {
     secure: bool(process.env.SMTP_SECURE, false),
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
-    from: process.env.MAIL_FROM || 'NexChat <no-reply@nexchat.app>',
+    from: process.env.MAIL_FROM || 'Chax <no-reply@nexchat.app>',
   },
 
   upload: {

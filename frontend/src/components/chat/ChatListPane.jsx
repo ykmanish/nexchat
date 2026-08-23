@@ -96,7 +96,7 @@ export function ChatListPane() {
           ) : (
             <>
               <h1 className="flex-1 px-2 font-display text-[24px] tracking-tight text-brand-strong">
-                NexChat
+                Chax
               </h1>
               <IconButton icon={Search} label="Search" onClick={() => setSearching(true)} />
               <IconButton

@@ -177,13 +177,32 @@ export const viewStory = asyncHandler(async (req, res) => {
 export const storyViewers = asyncHandler(async (req, res) => {
   const story = await Story.findById(req.params.id).populate(
     'viewers.user',
-    'name avatar avatarColor'
+    'name avatar avatarColor privacy'
   );
   if (!story) throw ApiError.notFound('Story not found', 'NO_STORY');
   if (String(story.user) !== String(req.user._id)) {
     throw ApiError.forbidden('Only the author can see this', 'NOT_AUTHOR');
   }
-  res.json({ success: true, viewers: story.viewers });
+
+  /* Someone who turned read receipts off is counted but not named — the same
+     bargain as message ticks. `total` therefore stays honest while `viewers`
+     only carries the people who allow it. */
+  const named = story.viewers.filter((v) => v.user?.privacy?.readReceipts !== false);
+
+  res.json({
+    success: true,
+    total: story.viewers.length,
+    hidden: story.viewers.length - named.length,
+    viewers: named.map((v) => ({
+      at: v.at,
+      user: {
+        _id: v.user._id,
+        name: v.user.name,
+        avatar: v.user.avatar,
+        avatarColor: v.user.avatarColor,
+      },
+    })),
+  });
 });
 
 export const deleteStory = asyncHandler(async (req, res) => {

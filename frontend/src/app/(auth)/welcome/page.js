@@ -17,7 +17,7 @@ export default function WelcomePage() {
   return (
     <AuthCard>
       <AuthHeading
-        title="Welcome to NexChat"
+        title="Welcome to Chax"
         subtitle="Create an account, or bring your chats to this screen."
       />
 

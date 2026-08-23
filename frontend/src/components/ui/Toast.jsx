@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 
 const ICONS = { success: CheckCircle2, error: AlertCircle, info: Info };
 const TONES = {
-  success: 'text-brand',
+  success: 'text-brand-strong',
   error: 'text-danger',
   info: 'text-info',
 };
@@ -58,7 +58,7 @@ export function ToastStack() {
                     t.action.onClick?.();
                     dismiss(t.id);
                   }}
-                  className="shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold text-brand transition-colors hover:bg-white/10"
+                  className="shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold text-brand-strong transition-colors hover:bg-white/10"
                 >
                   {t.action.label}
                 </button>

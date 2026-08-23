@@ -1,4 +1,4 @@
-/* NexChat service worker — notifications only.
+/* Chax service worker — notifications only.
  *
  * It has no access to the user's encryption keys, so it cannot and does not
  * read message content. The payload carries routing metadata only; the body

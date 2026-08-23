@@ -1,6 +1,6 @@
 {
-  "name": "NexChat",
-  "short_name": "NexChat",
+  "name": "Chax",
+  "short_name": "Chax",
   "description": "Fast, end-to-end encrypted messaging.",
   "start_url": "/chats",
   "display": "standalone",
