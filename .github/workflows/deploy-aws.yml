@@ -1,0 +1,89 @@
+name: Deploy NexChat to AWS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-chax-nexarrow-eu
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          port: ${{ secrets.AWS_SSH_PORT || 22 }}
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            APP_DIR=/var/www/nexchat
+            DATA_DIR=/var/www/nexchat-data
+
+            cd "$APP_DIR"
+
+            # The env files hold secrets, so they live only on the server.
+            # NEXT_PUBLIC_API_URL in particular is inlined at build time — a
+            # missing frontend env file produces a bundle that silently points
+            # at localhost:5000, which fails only in the user's browser. Fail
+            # here instead, before anything is rebuilt.
+            for f in backend/.env frontend/.env.production; do
+              if [ ! -f "$APP_DIR/$f" ]; then
+                echo "::error::$f is missing on the server. Copy it from deploy/ and fill it in."
+                exit 1
+              fi
+            done
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            mkdir -p "$DATA_DIR/uploads" /var/log/nexchat
+
+            echo "--- backend deps ---"
+            cd "$APP_DIR/backend"
+            npm ci --omit=dev
+
+            echo "--- frontend build ---"
+            cd "$APP_DIR/frontend"
+            npm ci
+            # A stale .next can survive a dependency change and produce a
+            # half-updated bundle, so always build from clean.
+            rm -rf .next
+            npm run build
+            npm prune --omit=dev
+
+            echo "--- restart ---"
+            cd "$APP_DIR"
+            pm2 startOrReload deploy/ecosystem.config.cjs --update-env
+            pm2 save
+
+            # A process that starts and immediately crashes still counts as a
+            # successful `pm2 reload`, so prove both apps actually serve.
+            echo "--- health check ---"
+            ok=0
+            for i in $(seq 1 20); do
+              sleep 3
+              api=$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:5100/api/health || echo 000)
+              web=$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/ || echo 000)
+              echo "attempt $i: api=$api web=$web"
+              if [ "$api" = "200" ] && [ "$web" = "200" ]; then ok=1; break; fi
+            done
+
+            if [ "$ok" != "1" ]; then
+              echo "::error::Health check failed after restart. Recent logs:"
+              pm2 logs nexchat-backend --lines 40 --nostream || true
+              pm2 logs nexchat-frontend --lines 40 --nostream || true
+              exit 1
+            fi
+
+            echo "Deployed. $(pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{JSON.parse(s).filter(p=>p.name.startsWith("nexchat")).forEach(p=>console.log(p.name,p.pm2_env.status,"restarts:"+p.pm2_env.restart_time))})')"

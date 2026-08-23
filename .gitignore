@@ -7,6 +7,9 @@ dist/
 .env
 .env.local
 .env.*.local
+# The server's build-time config. Not secret today, but it sits beside
+# the ones that are — keep it out of the repo by default.
+.env.production
 
 *.log
 server.log
