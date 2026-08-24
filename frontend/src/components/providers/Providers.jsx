@@ -134,10 +134,26 @@ function SocketBridge() {
 
         if (!isMine) {
           const conv = chat().conversations.find((c) => c._id === conversationId);
-          if (!conv?.muted && user.settings?.sounds !== false) {
-            feedback(isActive ? 'receive' : 'receive');
+          if (audible(conv, message) && user.settings?.sounds !== false) {
+            feedback(message.mentionedMe ? 'mention' : 'receive');
           }
-          if (!isActive) notify(conv, message, user);
+          if (!isActive && audible(conv, message)) notify(conv, message, user);
+        }
+      },
+
+      /* A reply lands in its panel and bumps the root's counter; it must not
+         appear in the timeline, which is what threads are for. */
+      'message:thread-reply': async ({ conversationId, message, threadRoot }) => {
+        const isMine = String(message.sender?._id || message.sender) === String(user._id);
+
+        await chat().decrypt(message);
+        chat().receiveThreadReply(conversationId, threadRoot, message);
+
+        if (!isMine) {
+          const conv = chat().conversations.find((c) => c._id === conversationId);
+          if (audible(conv, message) && user.settings?.sounds !== false) {
+            feedback(message.mentionedMe ? 'mention' : 'receive');
+          }
         }
       },
 
@@ -238,14 +254,46 @@ function SocketBridge() {
         chat().patchConversation(conversationId, patch),
       'conversation:state': ({ conversationId, state }) =>
         chat().patchConversation(conversationId, state),
-      'conversation:bump': ({ conversationId, lastMessageAt, unreadCount, senderId }) => {
-        const patch = { lastMessageAt };
-        if (String(senderId) !== String(user._id)) patch.unreadCount = unreadCount;
+      'conversation:bump': ({
+        conversationId,
+        lastMessageAt,
+        unreadCount,
+        mentionCount,
+        senderId,
+        isThreadReply,
+      }) => {
+        // A thread reply does not move the chat in the list — see the server
+        // side of this in createMessage.
+        const patch = isThreadReply ? {} : { lastMessageAt };
+        if (String(senderId) !== String(user._id)) {
+          if (!isThreadReply) patch.unreadCount = unreadCount;
+          if (mentionCount !== undefined) patch.mentionCount = mentionCount;
+        }
         chat().patchConversation(conversationId, patch);
       },
       'conversation:read': ({ conversationId }) =>
-        chat().patchConversation(conversationId, { unreadCount: 0 }),
-      'conversation:removed': ({ conversationId }) => chat().removeConversation(conversationId),
+        chat().patchConversation(conversationId, { unreadCount: 0, mentionCount: 0 }),
+
+      'conversation:banned': ({ conversationId, userId: banned }) => {
+        if (String(banned) === String(user._id)) return; // handled below
+        useChat.setState((s) => ({
+          conversations: s.conversations.map((c) =>
+            c._id === conversationId
+              ? {
+                  ...c,
+                  memberCount: Math.max(0, (c.memberCount || 1) - 1),
+                  bannedCount: (c.bannedCount || 0) + 1,
+                }
+              : c
+          ),
+        }));
+      },
+      'conversation:removed': ({ conversationId, reason }) => {
+        chat().removeConversation(conversationId);
+        if (reason === 'banned') {
+          useUI.getState().toast('You were removed from that chat.', { type: 'error' });
+        }
+      },
 
       'devices:changed': () => {
         // A new device joined the account — future fan-outs must include it.
@@ -320,6 +368,20 @@ function AudioUnlock() {
 }
 
 /** Desktop notification for messages that arrive while you're elsewhere. */
+/**
+ * Whether this message should make a sound or raise a notification.
+ *
+ * Mute used to be all-or-nothing, and a muted group therefore went completely
+ * dark — including the one case you actually wanted through it. 'mentions' mode
+ * is the answer: silent for ordinary traffic, audible when it names you. The
+ * server applies the same rule to push, so a closed tab behaves identically.
+ */
+function audible(conversation, message) {
+  if (!conversation?.muted) return true;
+  if (conversation.mutedUntil && new Date(conversation.mutedUntil) < new Date()) return true;
+  return conversation.muteMode === 'mentions' && !!message.mentionedMe;
+}
+
 function notify(conversation, message, user) {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;

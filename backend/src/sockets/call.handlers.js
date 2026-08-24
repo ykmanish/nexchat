@@ -1,4 +1,4 @@
-import { Call, Conversation, Message, User } from '../models/index.js';
+import { Call, CallLink, Conversation, Message, User } from '../models/index.js';
 import { shortId } from '../utils/ids.js';
 import { logger } from '../utils/logger.js';
 
@@ -119,6 +119,92 @@ export function registerCallHandlers(io, socket) {
     socket.to('call:' + callId).emit('call:media-state', { callId, userId, muted, videoOff });
   });
 
+  /* ── screen sharing ──
+     The screen travels as an ordinary extra track over the existing peer
+     connection, so nothing here touches media. What the peers cannot work out
+     for themselves is *which* incoming track is a screen and who is sharing, and
+     that is all this announces. Kept separate from media-state because the UI
+     reacts to it completely differently — a shared screen takes over the
+     layout, a muted mic does not. */
+  socket.on('call:screen-share', ({ callId, on }) => {
+    socket.to('call:' + callId).emit('call:screen-share', {
+      callId,
+      userId,
+      deviceId,
+      on: !!on,
+    });
+  });
+
+  /* ── link calls ──
+     A call reached by link has no conversation to derive its room from, so the
+     room is the link's code. Joining the callId room as well means every piece
+     of signalling below can address peers the same way whether they arrived
+     through a chat or through a URL. */
+  socket.on('call:link-join', async ({ code }, ack) => {
+    try {
+      const link = await CallLink.findOne({ code: String(code || '').toUpperCase() });
+      if (!link || !link.isLive()) {
+        return ack?.({ success: false, message: 'That link is no longer valid' });
+      }
+
+      // The REST join is what admits someone; this only attaches their socket.
+      // Without that check a leaked code would be a listening post on the room.
+      const call = link.callId ? await Call.findOne({ callId: link.callId }) : null;
+      const admitted = call?.participants?.some(
+        (p) => String(p.user) === String(userId) && !p.leftAt
+      );
+      if (!admitted) return ack?.({ success: false, message: 'Join the call first' });
+
+      socket.join('call:' + link.code);
+      socket.join('call:' + link.callId);
+      socket.to('call:' + link.code).emit('call:peer-joined', {
+        callId: link.callId,
+        userId,
+        deviceId,
+      });
+
+      ack?.({ success: true, callId: link.callId, mode: link.mode });
+    } catch (err) {
+      logger.error('call:link-join — ' + err.message);
+      ack?.({ success: false, message: err.message });
+    }
+  });
+
+  socket.on('call:link-leave', async ({ code }) => {
+    const link = await CallLink.findOne({ code: String(code || '').toUpperCase() });
+    if (!link) return;
+
+    socket.leave('call:' + link.code);
+    if (link.callId) socket.leave('call:' + link.callId);
+
+    socket.to('call:' + link.code).emit('call:peer-left', {
+      callId: link.callId,
+      userId,
+      deviceId,
+    });
+
+    // The last one out ends the call, so the next joiner starts a fresh one
+    // instead of walking into an empty room.
+    if (link.callId) {
+      const call = await Call.findOne({ callId: link.callId });
+      if (!call) return;
+
+      const mine = call.participants.find(
+        (p) => String(p.user) === String(userId) && p.deviceId === deviceId && !p.leftAt
+      );
+      if (mine) mine.leftAt = new Date();
+
+      if (!call.participants.some((p) => !p.leftAt)) {
+        call.status = 'ended';
+        call.endedAt = new Date();
+        call.duration = call.answeredAt
+          ? Math.round((Date.now() - call.answeredAt.getTime()) / 1000)
+          : 0;
+      }
+      await call.save();
+    }
+  });
+
   socket.on('call:end', async ({ callId }) => {
     const call = await Call.findOne({ callId });
     if (!call || call.status === 'ended') return;
@@ -130,11 +216,12 @@ export function registerCallHandlers(io, socket) {
     call.duration = duration;
     await call.save();
 
-    io.to('conversation:' + call.conversation).emit('call:ended', {
-      callId,
-      reason: 'hangup',
-      duration,
-    });
+    // Addressed both ways on purpose: a call reached by link has no
+    // conversation room, and one reached from a chat has peers who may not have
+    // joined the call room yet.
+    const ended = { callId, reason: 'hangup', duration };
+    if (call.conversation) io.to('conversation:' + call.conversation).emit('call:ended', ended);
+    io.to('call:' + callId).emit('call:ended', ended);
 
     socket.leave('call:' + callId);
 

@@ -15,6 +15,8 @@ export const useUI = create((set, get) => ({
 
   /* ─── composer state shared across components ─── */
   replyTo: null,
+  /** Root message id of the open reply panel, or null. */
+  repliesFor: null,
   editing: null,
   selection: [], // multi-select message ids
   forwarding: null,
@@ -55,6 +57,11 @@ export const useUI = create((set, get) => ({
   closeContextMenu: () => set({ contextMenu: null }),
 
   setReplyTo: (message) => set({ replyTo: message, editing: null }),
+  /* The panel has its own composer, so any half-written reply or edit in the
+     conversation's composer is cleared — otherwise the banner stays up behind
+     a panel that cannot act on it. */
+  openReplies: (rootId) => set({ repliesFor: rootId, replyTo: null, editing: null }),
+  closeReplies: () => set({ repliesFor: null }),
   setEditing: (message) => set({ editing: message, replyTo: null }),
   clearComposerState: () => set({ replyTo: null, editing: null }),
 

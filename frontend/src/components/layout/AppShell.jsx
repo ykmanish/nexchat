@@ -8,6 +8,7 @@ import { Logo } from '@/components/brand/Logo';
 import { UnlockScreen } from '@/components/auth/UnlockScreen';
 import { AppLockScreen } from '@/components/auth/AppLockScreen';
 import { appLock } from '@/lib/applock';
+import * as devicesync from '@/lib/devicesync';
 import { registerServiceWorker } from '@/lib/push';
 import { BottomNav } from './BottomNav';
 import { DesktopRail } from './DesktopRail';
@@ -60,8 +61,14 @@ export function AppShell({ children }) {
   }, [status]);
 
   useEffect(() => {
-    if (status === 'guest') router.replace('/welcome');
-  }, [status, router]);
+    if (status !== 'guest') return;
+
+    /* A shared link — a call code especially — is usually opened by someone who
+       is not signed in yet. Dropping them on /welcome and forgetting where they
+       were headed makes the link look broken, so it travels with them. */
+    const isDefault = pathname === '/' || pathname === '/chats';
+    router.replace(isDefault ? '/welcome' : '/welcome?next=' + encodeURIComponent(pathname));
+  }, [status, router, pathname]);
 
   useEffect(() => {
     if (status === 'authed' && !loaded) {
@@ -69,6 +76,45 @@ export function AppShell({ children }) {
       useChat.getState().loadStories().catch(() => {});
     }
   }, [status, loaded, loadConversations]);
+
+  /**
+   * Pull in what the account's other devices have decrypted, then contribute
+   * what this one has.
+   *
+   * This is what stops a laptop and a phone showing different history: a device
+   * cannot decrypt messages sent before it was linked, so the only way it can
+   * ever show them is if another device hands over the plaintext — sealed under
+   * a key derived from the account identity, which both already hold and the
+   * server does not.
+   *
+   * Run on open, and again when the tab comes back after being away, because
+   * that is exactly when the other device has probably been the one in use.
+   * Failures are deliberately silent: sync is a convenience layered on top of a
+   * chat that already works without it.
+   */
+  useEffect(() => {
+    if (status !== 'authed' || locked) return undefined;
+
+    const run = () => {
+      devicesync
+        .sync()
+        .then((result) => {
+          if (result?.pulled?.pulled) {
+            // Newly-restored history is on disk but not in the store yet.
+            loadConversations().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
+
+    run();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [status, locked, loadConversations]);
 
   if (status === 'loading') {
     return (

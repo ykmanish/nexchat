@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -24,6 +24,9 @@ import { useAuth } from '@/store/auth';
 import { useUI, toast } from '@/store/ui';
 import { cn, duration, formatBytes, throttle, debounce } from '@/lib/utils';
 import { firstUrl } from '@/lib/codeblocks';
+import * as mentions from '@/lib/mentions';
+import * as media from '@/lib/media';
+import { send as sendUpload } from '@/lib/upload';
 import { cachedPreview, hostOf, resolvePreview as resolveShared } from '@/lib/linkpreview';
 import { feedback, sounds } from '@/lib/sound';
 import { emit } from '@/lib/socket';
@@ -32,12 +35,13 @@ import * as e2ee from '@/lib/e2ee';
 import { IconButton } from '@/components/ui/Button';
 import { ActionSheet } from '@/components/ui/Sheet';
 import { FileBadge } from '@/components/ui/FileIcon';
+import { MentionMenu } from './MentionMenu';
 
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 
 const MAX_ATTACHMENTS = 10;
 
-export function Composer({ conversation, onSent }) {
+export function Composer({ conversation, onSent, threadRoot = null, placeholder }) {
   const sendMessage = useChat((s) => s.sendMessage);
   const editMessage = useChat((s) => s.editMessage);
   const plain = useChat((s) => s.plain);
@@ -49,11 +53,20 @@ export function Composer({ conversation, onSent }) {
   const clearComposerState = useUI((s) => s.clearComposerState);
 
   const [text, setText] = useState('');
+
+  /* @-mentions. `token` is the half-typed mention at the caret; `picked` keeps
+     the labels of everyone chosen so far, which ride along inside the encrypted
+     payload so a bubble can highlight them without a roster lookup. */
+  const [token, setToken] = useState(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [picked, setPicked] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** 0–100 while a chunked upload is in flight, so the bar means something. */
+  const [progress, setProgress] = useState(0);
   const [viewOnce, setViewOnce] = useState(false);
   const [preview, setPreview] = useState(null);
   const previewFor = useRef(null);
@@ -138,6 +151,20 @@ export function Composer({ conversation, onSent }) {
   }, [text, preview?.url, resolvePreview]);
 
   /* ── attachments ── */
+
+  /**
+   * Prepare, encrypt, upload.
+   *
+   * Order matters and is not obvious: shrinking has to happen *before*
+   * encryption, because once the bytes are ciphertext nothing downstream can
+   * resize them — not this app, not the server, not ever. So a 9 MB phone photo
+   * becomes a ~400 KB WebP here or it stays 9 MB for good.
+   *
+   * The upload itself goes through the resumable path for anything big enough to
+   * be worth chunking, so a dropped connection costs the chunks in flight rather
+   * than the whole file. `kind === 'file'` means the user chose "document", and
+   * that is honoured exactly: no compression, every byte kept.
+   */
   async function addFiles(fileList, kind = 'file') {
     const files = Array.from(fileList || []).slice(0, MAX_ATTACHMENTS - attachments.length);
     if (!files.length) return;
@@ -145,27 +172,17 @@ export function Composer({ conversation, onSent }) {
     setUploading(true);
     try {
       for (const file of files) {
-        const detected =
-          kind !== 'file'
-            ? kind
-            : file.type.startsWith('image/')
-              ? 'image'
-              : file.type.startsWith('video/')
-                ? 'video'
-                : file.type.startsWith('audio/')
-                  ? 'audio'
-                  : 'file';
+        const asDocument = kind === 'file' && !file.type.startsWith('image/');
+        const prepared = await media.prepare(file, { asDocument });
 
-        const encrypted = await e2ee.encryptFile(file);
-        const form = new FormData();
-        form.append('files', encrypted.blob, 'blob.bin');
+        const detected = kind !== 'file' ? kind : prepared.kind;
+        const encrypted = await e2ee.encryptFile(prepared.blob);
 
-        const { data } = await api.post('/uploads/media', form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+        const uploaded = await sendUpload(encrypted.blob, {
+          bucket: 'media',
+          filename: 'blob.bin',
+          onProgress: (fraction) => setProgress(Math.round(fraction * 100)),
         });
-
-        const uploaded = data.files[0];
-        const dims = detected === 'image' ? await imageDimensions(file) : {};
 
         setAttachments((list) => [
           ...list,
@@ -173,27 +190,111 @@ export function Composer({ conversation, onSent }) {
             id: uploaded.id,
             url: uploaded.url,
             kind: detected,
-            size: file.size,
+            // The size that matters to the recipient is what was actually sent.
+            size: prepared.blob.size,
             key: encrypted.key,
             iv: encrypted.iv,
             name: file.name,
-            mime: file.type,
-            previewUrl: detected === 'image' ? URL.createObjectURL(file) : null,
-            ...dims,
+            mime: prepared.blob.type || file.type,
+            width: prepared.width ?? null,
+            height: prepared.height ?? null,
+            duration: prepared.duration ?? null,
+            // Rides inside the encrypted envelope, so the bubble has something
+            // to show before the real bytes arrive.
+            thumbnail: prepared.thumbnail || null,
+            previewUrl:
+              detected === 'image' || detected === 'gif'
+                ? URL.createObjectURL(prepared.blob)
+                : null,
           },
         ]);
+
+        if (prepared.compressed && prepared.savedBytes > 256 * 1024) {
+          toast.info(
+            'Shrunk to ' +
+              media.formatBytes(prepared.blob.size) +
+              ' from ' +
+              media.formatBytes(prepared.originalSize)
+          );
+        }
       }
       feedback('tap');
     } catch (err) {
       toast.error(err.message || 'Could not attach that file');
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   }
 
   function removeAttachment(id) {
     feedback('tap');
     setAttachments((list) => list.filter((a) => a.id !== id));
+  }
+
+  /* ── @-mentions ── */
+
+  const mentionItems = useMemo(
+    () =>
+      token
+        ? mentions.candidates(conversation, token.query, { meId: user?._id })
+        : [],
+    [token, conversation, user?._id]
+  );
+
+  /** Recomputes the active token after any change that can move the caret. */
+  function syncToken(value, caret) {
+    if (!conversation || conversation.type === 'direct') return setToken(null);
+    const next = mentions.activeToken(value, caret);
+    setToken(next);
+    setMentionIndex(0);
+  }
+
+  function pickMention(candidate) {
+    if (!token) return;
+
+    const { text: next, caret } = mentions.insert(text, token, candidate);
+    setText(next);
+    setToken(null);
+    if (!candidate.everyone) {
+      setPicked((list) =>
+        list.some((p) => p.id === candidate.id)
+          ? list
+          : [...list, { id: candidate.id, label: candidate.label, name: candidate.name }]
+      );
+    }
+
+    // The caret has to be placed after React has written the new value, or the
+    // browser puts it back at the end of the old one.
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
+  }
+
+  /** True when the menu swallowed the key. */
+  function handleMentionKey(e) {
+    if (!token || !mentionItems.length) return false;
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setMentionIndex((i) => (i + step + mentionItems.length) % mentionItems.length);
+      return true;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      pickMention(mentionItems[mentionIndex]);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setToken(null);
+      return true;
+    }
+    return false;
   }
 
   /* ── send ── */
@@ -216,9 +317,16 @@ export function Composer({ conversation, onSent }) {
       (preview && sentUrl === preview.url ? preview : null) ||
       (sentUrl ? cachedPreview(sentUrl) || null : null);
 
+    // Resolved from the finished text, not from what was clicked: a mention
+    // that has been backspaced away should not ring anyone.
+    const named = mentions.collect(body, conversation, { meId: user?._id });
+    const usedLabels = picked.filter((p) => named.mentions.includes(p.id));
+
     setText('');
     setAttachments([]);
     setViewOnce(false);
+    setToken(null);
+    setPicked([]);
     setPreview(null);
     previewFor.current = null;
     setShowEmoji(false);
@@ -248,7 +356,13 @@ export function Composer({ conversation, onSent }) {
         replyTo: reply?._id || null,
         type: files.length === 1 ? files[0].kind : 'text',
         viewOnce: once,
-        meta: linkPreview ? { linkPreview } : {},
+        threadRoot,
+        mentions: named.mentions,
+        mentionsEveryone: named.mentionsEveryone,
+        meta: {
+          ...(linkPreview ? { linkPreview } : {}),
+          ...(usedLabels.length ? { mentionLabels: usedLabels } : {}),
+        },
       });
       onSent?.();
     } catch (err) {
@@ -516,7 +630,20 @@ export function Composer({ conversation, onSent }) {
         </AnimatePresence>
 
         {/* ── input row ── */}
-        <div className="flex items-end gap-1.5">
+        {/* `relative` so the mention menu can hang above the whole row rather
+            than above the textarea's own rounded pill. */}
+        <div className="relative flex items-end gap-1.5">
+          <AnimatePresence>
+            {token && mentionItems.length > 0 && !recorder.recording && (
+              <MentionMenu
+                items={mentionItems}
+                active={mentionIndex}
+                onPick={pickMention}
+                onHover={setMentionIndex}
+              />
+            )}
+          </AnimatePresence>
+
           <AnimatePresence mode="wait" initial={false}>
             {recorder.recording ? (
               <motion.div
@@ -580,10 +707,22 @@ export function Composer({ conversation, onSent }) {
                     value={text}
                     onChange={(e) => {
                       setText(e.target.value);
+                      syncToken(e.target.value, e.target.selectionStart);
                       if (e.target.value) pingTyping();
                       else stopTyping();
                     }}
+                    onClick={(e) => syncToken(e.target.value, e.target.selectionStart)}
+                    onKeyUp={(e) => {
+                      // Arrow keys move the caret without changing the value, so
+                      // the token has to be re-read after the fact.
+                      if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') {
+                        syncToken(e.target.value, e.target.selectionStart);
+                      }
+                    }}
                     onKeyDown={(e) => {
+                      // The menu gets first refusal: Enter should complete a
+                      // mention rather than send a half-typed one.
+                      if (handleMentionKey(e)) return;
                       if (e.key === 'Enter' && !e.shiftKey && enterToSend) {
                         e.preventDefault();
                         send();
@@ -597,7 +736,9 @@ export function Composer({ conversation, onSent }) {
                         addFiles(files);
                       }
                     }}
-                    placeholder={editing ? 'Edit your message' : 'Message'}
+                    placeholder={
+                      editing ? 'Edit your message' : placeholder || 'Message'
+                    }
                     className="scroll-soft max-h-[132px] min-h-[34px] flex-1 resize-none bg-transparent px-2 py-[8px] text-[15px] leading-[1.4] outline-none placeholder:text-ink-faint"
                   />
 
@@ -668,12 +809,23 @@ export function Composer({ conversation, onSent }) {
 
         {uploading && (
           <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden">
-            <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: '100%' }}
-              transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
-              className="h-full w-1/3 bg-brand"
-            />
+            {/* A real fraction once the chunked upload starts reporting one.
+                Until then it is the indeterminate sweep, because a bar sitting
+                at 0% reads as stuck rather than starting. */}
+            {progress > 0 ? (
+              <motion.div
+                animate={{ width: progress + '%' }}
+                transition={{ ease: 'easeOut', duration: 0.25 }}
+                className="h-full bg-brand"
+              />
+            ) : (
+              <motion.div
+                initial={{ x: '-100%' }}
+                animate={{ x: '100%' }}
+                transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+                className="h-full w-1/3 bg-brand"
+              />
+            )}
           </div>
         )}
       </div>

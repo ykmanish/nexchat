@@ -12,6 +12,7 @@ import {
   verifyRefreshToken,
   refreshCookieOptions,
 } from '../services/token.js';
+import { redeemTicket } from './passkey.controller.js';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 6;
@@ -269,6 +270,44 @@ export const login = asyncHandler(async (req, res) => {
     user,
     keys: keys.device,
     deviceInfo,
+  });
+
+  user.lastLoginAt = new Date();
+  await user.save();
+
+  const deviceCount = await Device.countDocuments({ user: user._id, revokedAt: null });
+  if (deviceCount > 1) mailer.sendNewDeviceAlert(user.email, device).catch(() => {});
+
+  res.cookie('refreshToken', refreshToken, refreshCookieOptions);
+  res.json({
+    success: true,
+    ...sessionPayload(user, device, accessToken, refreshToken),
+    encryptedIdentity: user.encryptedIdentity,
+  });
+});
+
+/**
+ * Finishes a passkey login.
+ *
+ * The assertion was already verified and traded for a ticket; by now the client
+ * has unlocked its identity (from the PRF-wrapped copy, or with the password
+ * once) and minted its device keys. All that is left is what a password login
+ * does after `comparePassword`, which is why this reuses the same helper rather
+ * than growing a parallel session path that could drift out of step.
+ */
+export const passkeyLoginComplete = asyncHandler(async (req, res) => {
+  const { ticket, keys, device: deviceInfo } = req.body;
+  if (!ticket) throw ApiError.badRequest('Missing ticket', 'NO_TICKET');
+  if (!keys?.device) throw ApiError.badRequest('Device keys are required', 'NO_KEYS');
+
+  const user = await redeemTicket(ticket);
+
+  const { device, accessToken, refreshToken } = await registerDevice({
+    req,
+    user,
+    keys: keys.device,
+    deviceInfo,
+    linkedVia: 'passkey',
   });
 
   user.lastLoginAt = new Date();

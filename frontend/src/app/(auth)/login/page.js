@@ -1,32 +1,97 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, ArrowLeft, QrCode } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, QrCode, KeyRound } from 'lucide-react';
 import { AuthCard, AuthHeading } from '@/components/auth/AuthShell';
 import { Input } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/store/auth';
 import { toast } from '@/store/ui';
 import { feedback } from '@/lib/sound';
+import * as passkeys from '@/lib/passkeys';
 
 export default function LoginPage() {
   const router = useRouter();
+
+  /* Where to land afterwards — see the note in welcome/page.js for why this is
+     read after mount. Relative only: an absolute URL here would be an open
+     redirect for anyone who can hand out a login link. */
+  const [next, setNext] = useState('/chats');
+
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get('next');
+    if (value && value.startsWith('/') && !value.startsWith('//')) setNext(value);
+  }, []);
+
   const login = useAuth((s) => s.login);
+  const passkeyLogin = useAuth((s) => s.passkeyLogin);
+  const passkeyLoginWithPassword = useAuth((s) => s.passkeyLoginWithPassword);
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState('idle'); // idle | unlocking
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  /* Set when a passkey has proved who you are but cannot open your keys. The
+     ticket is still good, so the password step needs no second sensor touch. */
+  const [pendingProof, setPendingProof] = useState(null);
 
   const set = (key) => (e) => {
     setForm((f) => ({ ...f, [key]: e.target.value }));
     setErrors((x) => ({ ...x, [key]: null }));
   };
 
+  /**
+   * Sign in with a passkey.
+   *
+   * On a device that has never held this account the identity still has to come
+   * from somewhere, so an authenticator without PRF sends us to a one-off
+   * password prompt rather than failing.
+   */
+  async function onPasskey() {
+    setPasskeyBusy(true);
+    try {
+      await passkeyLogin();
+      feedback('success');
+      router.replace(next);
+    } catch (err) {
+      if (err.code === 'NEEDS_PASSWORD') {
+        setPendingProof(err.proof);
+        setForm((f) => ({ ...f, email: err.proof.account?.email || f.email }));
+        toast.info(err.message);
+      } else {
+        feedback('error');
+        toast.error(err.message);
+      }
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
   async function onSubmit(e) {
     e.preventDefault();
+
+    // Finishing an already-verified passkey sign-in: the email is settled and
+    // only the password is missing.
+    if (pendingProof) {
+      if (!form.password) return setErrors({ password: 'Enter your password' });
+      setLoading(true);
+      setStage('unlocking');
+      try {
+        await passkeyLoginWithPassword(pendingProof, form.password);
+        feedback('success');
+        router.replace(next);
+      } catch (err) {
+        setStage('idle');
+        feedback('error');
+        setErrors({ password: 'That password did not unlock your keys' });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     const next = {};
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) next.email = 'Enter a valid email address';
@@ -40,7 +105,7 @@ export default function LoginPage() {
     try {
       await login(form);
       feedback('success');
-      router.replace('/chats');
+      router.replace(next);
     } catch (err) {
       setStage('idle');
       if (err.code === 'EMAIL_UNVERIFIED') {
@@ -74,7 +139,8 @@ export default function LoginPage() {
           onChange={set('email')}
           error={errors.email}
           autoComplete="email"
-          autoFocus
+          disabled={!!pendingProof}
+          autoFocus={!pendingProof}
         />
 
         <Input
@@ -98,7 +164,11 @@ export default function LoginPage() {
         </div>
 
         <Button type="submit" size="block" loading={loading} sound="select">
-          {stage === 'unlocking' && loading ? 'Unlocking your keys…' : 'Sign in'}
+          {stage === 'unlocking' && loading
+            ? 'Unlocking your keys…'
+            : pendingProof
+              ? 'Unlock my chats'
+              : 'Sign in'}
         </Button>
       </form>
 
@@ -109,6 +179,20 @@ export default function LoginPage() {
         </span>
         <div className="h-px flex-1 bg-line" />
       </div>
+
+      {passkeys.isSupported() && !pendingProof && (
+        <Button
+          size="block"
+          variant="secondary"
+          icon={KeyRound}
+          className="mb-2.5"
+          loading={passkeyBusy}
+          onClick={onPasskey}
+          sound="tap"
+        >
+          Sign in with a passkey
+        </Button>
+      )}
 
       <Link href="/link" className="block">
         <Button size="block" variant="secondary" icon={QrCode} sound="tap">

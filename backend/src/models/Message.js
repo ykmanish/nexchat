@@ -85,6 +85,25 @@ const messageSchema = new mongoose.Schema(
     forwardedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     forwardScore: { type: Number, default: 0 },
 
+    /** Threads. A reply names the message it hangs under; the root carries the
+     *  counters so a chat list or a bubble can show "12 replies" without
+     *  counting rows. Replies are kept out of the main timeline — the thread
+     *  panel is the only place they appear. */
+    threadRoot: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null, index: true },
+    thread: {
+      replyCount: { type: Number, default: 0 },
+      lastReplyAt: { type: Date, default: null },
+      /** Everyone who has posted in the thread, for "you are following this". */
+      participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    },
+
+    /** Who was @-named. The names themselves are inside the encrypted body —
+     *  only the ids are out here, because routing a notification to the right
+     *  person is something the server has to be able to do. That does tell the
+     *  server who was mentioned in a group, which is the price of the feature. */
+    mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true }],
+    mentionsEveryone: { type: Boolean, default: false },
+
     reactions: {
       type: [
         {

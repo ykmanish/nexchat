@@ -14,6 +14,7 @@ import {
   CheckSquare,
   Plus,
   Info,
+  MessagesSquare,
 } from 'lucide-react';
 import { useUI, toast } from '@/store/ui';
 import { useChat } from '@/store/chat';
@@ -40,6 +41,7 @@ export function MessageActions({ conversation }) {
   const setForwarding = useUI((s) => s.setForwarding);
   const toggleSelection = useUI((s) => s.toggleSelection);
   const openSheet = useUI((s) => s.openSheet);
+  const openReplies = useUI((s) => s.openReplies);
 
   const toggleReaction = useChat((s) => s.toggleReaction);
   const toggleStar = useChat((s) => s.toggleStar);
@@ -158,6 +160,13 @@ export function MessageActions({ conversation }) {
       onClick: () => openSheet('messageInfo', { message, conversation }),
     },
     { label: 'Reply', icon: CornerUpLeft, onClick: () => setReplyTo(message) },
+    {
+      label: message?.thread?.replyCount ? 'View replies' : 'Reply in thread',
+      icon: MessagesSquare,
+      // A reply already in a thread opens the thread it belongs to, rather than
+      // starting a second one under itself.
+      onClick: () => openReplies(message.threadRoot || message._id),
+    },
     {
       label: 'Copy',
       icon: Copy,

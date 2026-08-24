@@ -157,6 +157,7 @@ export const updateConversationSchema = z.object({
       whoCanAddMembers: z.enum(['everyone', 'admins']).optional(),
       disappearingSeconds: z.number().int().min(0).max(7_776_000).optional(),
       approvalRequired: z.boolean().optional(),
+      slowModeSeconds: z.number().int().min(0).max(21_600).optional(),
     })
     .optional(),
 });
@@ -165,9 +166,14 @@ export const stateSchema = z.object({
   pinned: z.boolean().optional(),
   muted: z.boolean().optional(),
   mutedUntil: z.string().datetime().nullable().optional(),
+  muteMode: z.enum(['all', 'mentions']).optional(),
   archived: z.boolean().optional(),
   draft: z.string().max(5000).optional(),
   wallpaper: z.string().nullable().optional(),
+});
+
+export const banSchema = z.object({
+  reason: z.string().max(200).optional(),
 });
 
 /* ────────────────────────────── messages ────────────────────────────── */
@@ -220,6 +226,11 @@ export const sendMessageSchema = z.object({
       multiple: z.boolean().optional(),
     })
     .optional(),
+  /** Hangs this message under another as a thread reply. */
+  threadRoot: objectId.nullable().optional(),
+  /** Ids only — the @-names themselves are inside the encrypted body. */
+  mentions: z.array(objectId).max(128).optional(),
+  mentionsEveryone: z.boolean().optional(),
 });
 
 export const voteSchema = z.object({
@@ -310,3 +321,76 @@ export const storySchema = z.object({
 });
 
 export { objectId };
+
+/* ──────────────────────────── call links ──────────────────────────── */
+
+export const callLinkSchema = z.object({
+  name: z.string().trim().max(80).nullable().optional(),
+  mode: z.enum(['audio', 'video']).optional(),
+  conversationId: objectId.nullable().optional(),
+  approvalRequired: z.boolean().optional(),
+  maxParticipants: z.number().int().min(2).max(64).optional(),
+  expiresInHours: z.number().int().min(1).max(720).nullable().optional(),
+});
+
+/* ───────────────────────────── passkeys ───────────────────────────── */
+
+/** The credential JSON is passed straight to the verifier, which is far
+ *  stricter about its shape than a schema here could be — so this only checks
+ *  that the envelope is present and sane. */
+export const passkeyVerifySchema = z.object({
+  credential: z.object({
+    id: z.string().min(1).max(1024),
+    rawId: z.string().min(1).max(1024).optional(),
+    type: z.string().optional(),
+    response: z.record(z.any()),
+    clientExtensionResults: z.record(z.any()).optional(),
+    authenticatorAttachment: z.string().nullable().optional(),
+  }),
+  name: z.string().trim().max(60).optional(),
+  /** Identity key sealed under the authenticator's PRF output, when available. */
+  identityWrapper: z
+    .object({
+      ciphertext: z.string().min(1).max(20000),
+      iv: z.string().min(1).max(256),
+      salt: z.string().min(1).max(256),
+    })
+    .nullable()
+    .optional(),
+  keys: z.any().optional(),
+  device: z.any().optional(),
+});
+
+/* ────────────────────────────── backups ────────────────────────────── */
+
+export const backupSchema = z.object({
+  formatVersion: z.number().int().min(1).max(9).optional(),
+  ciphertext: z.string().min(1),
+  iv: z.string().min(1).max(256),
+  salt: z.string().min(1).max(256),
+  iterations: z.number().int().min(100_000).max(2_000_000).optional(),
+  verifier: z.string().max(512).nullable().optional(),
+  stats: z
+    .object({
+      messages: z.number().int().min(0).optional(),
+      conversations: z.number().int().min(0).optional(),
+      sessions: z.number().int().min(0).optional(),
+      media: z.number().int().min(0).optional(),
+    })
+    .optional(),
+  deviceName: z.string().max(80).nullable().optional(),
+});
+
+/* ──────────────────────────── device sync ──────────────────────────── */
+
+export const snapshotSchema = z.object({
+  ciphertext: z.string().min(1),
+  iv: z.string().min(1).max(256),
+  stats: z
+    .object({
+      messages: z.number().int().min(0).optional(),
+      conversations: z.number().int().min(0).optional(),
+      sessions: z.number().int().min(0).optional(),
+    })
+    .optional(),
+});

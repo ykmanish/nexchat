@@ -29,6 +29,8 @@ export const useChat = create((set, get) => ({
   hasMore: {}, // conversationId -> bool
   loadingMessages: {},
   typing: {}, // conversationId -> { userId: name }
+  threads: {}, // rootMessageId -> { root, replies, following }
+  threadLoading: {},
   presence: {}, // userId -> boolean
   stories: [],
   loaded: false,
@@ -274,6 +276,11 @@ export const useChat = create((set, get) => ({
     viewOnce = false,
     poll = null,
     meta = {},
+    /** Ids of the people @-named. The names themselves stay in the payload. */
+    mentions = [],
+    mentionsEveryone = false,
+    /** Set to hang this under another message instead of the timeline. */
+    threadRoot = null,
   }) {
     const conversation = get().conversations.find((c) => c._id === conversationId);
     if (!conversation) throw new Error('Conversation not loaded');
@@ -303,6 +310,9 @@ export const useChat = create((set, get) => ({
       attachments: attachments.map(stripAttachmentSecrets),
       replyTo,
       viewOnce,
+      threadRoot,
+      mentions,
+      mentionsEveryone,
       receipts: [],
       reactions: [],
       createdAt: new Date().toISOString(),
@@ -310,14 +320,29 @@ export const useChat = create((set, get) => ({
     };
 
     set((s) => ({
-      messages: {
-        ...s.messages,
-        [conversationId]: [...(s.messages[conversationId] || []), optimistic],
-      },
+      // A reply is optimistically added to its thread, never to the timeline —
+      // the timeline is where it must not appear.
+      messages: threadRoot
+        ? s.messages
+        : {
+            ...s.messages,
+            [conversationId]: [...(s.messages[conversationId] || []), optimistic],
+          },
+      threads: threadRoot
+        ? {
+            ...s.threads,
+            [threadRoot]: {
+              ...(s.threads[threadRoot] || { replies: [] }),
+              replies: [...(s.threads[threadRoot]?.replies || []), optimistic],
+            },
+          }
+        : s.threads,
       plain: { ...s.plain, [clientId]: localPayload },
     }));
 
-    get().patchConversation(conversationId, { lastMessageAt: optimistic.createdAt });
+    if (!threadRoot) {
+      get().patchConversation(conversationId, { lastMessageAt: optimistic.createdAt });
+    }
     feedback('send');
 
     try {
@@ -336,6 +361,9 @@ export const useChat = create((set, get) => ({
         replyTo: replyTo?._id || replyTo || null,
         viewOnce,
         ...(poll ? { poll } : {}),
+        ...(threadRoot ? { threadRoot } : {}),
+        ...(mentions.length ? { mentions } : {}),
+        ...(mentionsEveryone ? { mentionsEveryone: true } : {}),
       };
 
       // Socket first (lower latency); REST is the fallback if it is down.
@@ -350,12 +378,29 @@ export const useChat = create((set, get) => ({
       }
 
       set((s) => {
-        const list = (s.messages[conversationId] || []).map((m) =>
-          m.clientId === clientId ? { ...saved, pending: false } : m
-        );
+        const settle = (list) =>
+          (list || []).map((m) => (m.clientId === clientId ? { ...saved, pending: false } : m));
+
         const plain = { ...s.plain, [saved._id]: payload };
         delete plain[clientId];
-        return { messages: { ...s.messages, [conversationId]: list }, plain };
+
+        if (threadRoot) {
+          const thread = s.threads[threadRoot];
+          return {
+            plain,
+            threads: {
+              ...s.threads,
+              [threadRoot]: { ...thread, replies: settle(thread?.replies) },
+            },
+            // Keep the root's advertised count in step with what is on screen.
+            messages: bumpReplyCount(s.messages, conversationId, threadRoot, saved.createdAt),
+          };
+        }
+
+        return {
+          messages: { ...s.messages, [conversationId]: settle(s.messages[conversationId]) },
+          plain,
+        };
       });
 
       vault.cacheMessage({
@@ -368,17 +413,84 @@ export const useChat = create((set, get) => ({
 
       return saved;
     } catch (err) {
-      set((s) => ({
-        messages: {
-          ...s.messages,
-          [conversationId]: (s.messages[conversationId] || []).map((m) =>
-            m.clientId === clientId ? { ...m, pending: false, failed: true } : m
-          ),
-        },
-      }));
+      const mark = (list) =>
+        (list || []).map((m) =>
+          m.clientId === clientId ? { ...m, pending: false, failed: true } : m
+        );
+
+      set((s) =>
+        threadRoot
+          ? {
+              threads: {
+                ...s.threads,
+                [threadRoot]: {
+                  ...s.threads[threadRoot],
+                  replies: mark(s.threads[threadRoot]?.replies),
+                },
+              },
+            }
+          : {
+              messages: {
+                ...s.messages,
+                [conversationId]: mark(s.messages[conversationId]),
+              },
+            }
+      );
       feedback('error');
       throw err;
     }
+  },
+
+  /* ─────────────────────────────── threads ─────────────────────────────── */
+
+  /** Loads a thread and its root. Cheap enough to refetch rather than cache. */
+  async openThread(messageId) {
+    set((s) => ({ threadLoading: { ...s.threadLoading, [messageId]: true } }));
+    try {
+      const { data } = await api.get('/messages/' + messageId + '/thread');
+      const rootId = data.root._id;
+
+      // Replies carry the same encrypted envelope as anything else.
+      await get().decryptMany([data.root, ...data.replies]);
+
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [rootId]: { root: data.root, replies: data.replies, following: data.following },
+        },
+        threadLoading: { ...s.threadLoading, [messageId]: false, [rootId]: false },
+      }));
+
+      return rootId;
+    } catch (err) {
+      set((s) => ({ threadLoading: { ...s.threadLoading, [messageId]: false } }));
+      throw err;
+    }
+  },
+
+  /** A reply that arrived over the socket. */
+  receiveThreadReply(conversationId, threadRoot, message) {
+    set((s) => {
+      const thread = s.threads[threadRoot];
+      // Only worth holding if the panel is open; otherwise the count is enough
+      // and the replies are fetched fresh when it opens.
+      const replies = thread
+        ? [...thread.replies.filter((r) => r._id !== message._id), message]
+        : null;
+
+      return {
+        threads: replies ? { ...s.threads, [threadRoot]: { ...thread, replies } } : s.threads,
+        messages: bumpReplyCount(s.messages, conversationId, threadRoot, message.createdAt),
+      };
+    });
+  },
+
+  closeThread(rootId) {
+    set((s) => {
+      const threads = { ...s.threads };
+      delete threads[rootId];
+      return { threads };
+    });
   },
 
   async retryMessage(conversationId, clientId) {
@@ -579,6 +691,36 @@ export const useChat = create((set, get) => ({
     }));
   },
 
+  /**
+   * Wipes what this device shows for a chat after a server-side clear.
+   *
+   * Three separate places hold the same text, and missing any one of them is
+   * what made "clear" look like it had not worked: the loaded message list, the
+   * decrypted-payload map that the sidebar preview reads, and the on-disk cache
+   * that survives a reload. The conversation's own `lastMessage` goes too, or
+   * the row keeps its last line until the next refetch.
+   */
+  async clearLocalHistory(conversationId) {
+    const ids = (get().messages[conversationId] || []).map((m) => m._id).filter(Boolean);
+
+    set((s) => {
+      const plain = { ...s.plain };
+      ids.forEach((id) => delete plain[id]);
+
+      return {
+        messages: { ...s.messages, [conversationId]: [] },
+        plain,
+        conversations: s.conversations.map((c) =>
+          c._id === conversationId
+            ? { ...c, lastMessage: null, unreadCount: 0, mentionCount: 0 }
+            : c
+        ),
+      };
+    });
+
+    await vault.clearConversationCache(conversationId);
+  },
+
   clearTyping(conversationId, userId) {
     set((s) => {
       const room = { ...(s.typing[conversationId] || {}) };
@@ -604,7 +746,15 @@ export const useChat = create((set, get) => ({
   },
 
   setSearch: (search) => set({ search }),
-  reset: () => set({ conversations: [], messages: {}, plain: {}, activeId: null, loaded: false }),
+  reset: () =>
+    set({
+      conversations: [],
+      messages: {},
+      plain: {},
+      threads: {},
+      activeId: null,
+      loaded: false,
+    }),
 }));
 
 /* ────────────────────────────── helpers ────────────────────────────── */
@@ -629,6 +779,32 @@ function mergeById(existing, incoming) {
 }
 
 /** Attachment keys live inside the encrypted payload, never on the wire meta. */
+/**
+ * Keeps a root message's reply counter in step with what the panel shows.
+ * The server is authoritative, but waiting for a refetch to learn that a reply
+ * you just sent exists makes the count look broken.
+ */
+function bumpReplyCount(messages, conversationId, rootId, at) {
+  const list = messages[conversationId];
+  if (!list) return messages;
+
+  let touched = false;
+  const next = list.map((m) => {
+    if (m._id !== rootId) return m;
+    touched = true;
+    return {
+      ...m,
+      thread: {
+        ...(m.thread || {}),
+        replyCount: (m.thread?.replyCount || 0) + 1,
+        lastReplyAt: at,
+      },
+    };
+  });
+
+  return touched ? { ...messages, [conversationId]: next } : messages;
+}
+
 function stripAttachmentSecrets(a) {
   const { key, iv, name, mime, ...rest } = a;
   return rest;

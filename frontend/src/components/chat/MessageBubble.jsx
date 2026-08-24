@@ -2,7 +2,9 @@
 
 import { useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
-import { CornerUpLeft, Pencil, Star, Clock, AlertCircle, RotateCw, Forward, Check } from 'lucide-react';
+import {
+  CornerUpLeft, Pencil, Star, Clock, AlertCircle, RotateCw, Forward, Check, MessagesSquare,
+} from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
 import { useUI, toast } from '@/store/ui';
@@ -19,6 +21,7 @@ import { PollBubble } from './PollBubble';
 import { LinkPreview } from './LinkPreview';
 import { parseMessageBody, splitInlineCode, firstUrl } from '@/lib/codeblocks';
 import { seedPreview } from '@/lib/linkpreview';
+import * as mentions from '@/lib/mentions';
 
 /* 380ms fired while a scroll or a tap was still plausibly in progress, so the
    menu kept appearing unintentionally. 550ms is roughly what the platform
@@ -26,7 +29,13 @@ import { seedPreview } from '@/lib/linkpreview';
 const LONG_PRESS_MS = 550;
 const MOVE_TOLERANCE = 10;
 
-export function MessageBubble({ message, conversation, currentUserId, selecting }) {
+export function MessageBubble({
+  message,
+  conversation,
+  currentUserId,
+  selecting,
+  onOpenThread,
+}) {
   const plain = useChat((s) => s.plain[message._id] || s.plain[message.clientId]);
   const retryMessage = useChat((s) => s.retryMessage);
   const openContextMenu = useUI((s) => s.openContextMenu);
@@ -49,6 +58,8 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
   const x = useMotionValue(0);
   const replyOpacity = useTransform(x, isMine ? [-64, -24, 0] : [0, 24, 64], isMine ? [1, 0.35, 0] : [0, 0.35, 1]);
   const replyScale = useTransform(x, isMine ? [-64, -24] : [24, 64], isMine ? [1, 0.7] : [0.7, 1]);
+
+  const openThread = (id) => onOpenThread?.(id);
 
   const pressTimer = useRef(null);
   const pressOrigin = useRef({ x: 0, y: 0 });
@@ -296,7 +307,12 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
                         <CodeBlock key={pi} code={part.value} language={part.language} />
                       ) : (
                         <p key={pi} className="whitespace-pre-wrap break-words">
-                          {renderProse(part.value, query, message._id === activeHitId)}
+                          {renderProse(
+                            part.value,
+                            query,
+                            message._id === activeHitId,
+                            { labels: plain?.mentionLabels, meId: currentUserId }
+                          )}
                           {/* The spacer must live *inside* the final paragraph so
                               the timestamp tucks onto that line rather than
                               starting a new one. */}
@@ -348,6 +364,12 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
 
         <ReactionPills message={message} isMine={isMine} />
 
+        <ThreadChip
+          count={message.thread?.replyCount}
+          lastReplyAt={message.thread?.lastReplyAt}
+          onOpen={() => openThread(message._id)}
+        />
+
         {message.failed && (
           <button
             type="button"
@@ -363,8 +385,8 @@ export function MessageBubble({ message, conversation, currentUserId, selecting 
   );
 }
 
-/** Links, inline code and search hits, in that order of precedence. */
-function renderProse(value, query, isActiveHit) {
+/** Links, inline code, mentions and search hits, in that order of precedence. */
+function renderProse(value, query, isActiveHit, mention = {}) {
   return splitInlineCode(value).map((chunk, ci) => {
     if (chunk.code) return <CodeBlock key={ci} code={chunk.value} inline />;
 
@@ -391,10 +413,74 @@ function renderProse(value, query, isActiveHit) {
           )
         )
       ) : (
-        <span key={ci + '-' + li}>{part.value}</span>
+        <MentionText key={ci + '-' + li} value={part.value} {...mention} />
       )
     );
   });
+}
+
+/**
+ * Highlights @-names inside a plain run of text.
+ *
+ * The one naming *you* is emphasised harder than the others — in a busy group
+ * that difference is the only thing that makes scrolling back useful. Driven by
+ * the labels stored in the payload rather than a live roster, so an old message
+ * still reads correctly after someone renames themselves.
+ */
+function MentionText({ value, labels, meId }) {
+  if (!labels?.length && !/@(everyone|all)\b/i.test(value)) return <span>{value}</span>;
+
+  const parts = mentions.segments(value, labels || [], { meId });
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.type === 'mention' ? (
+          <span
+            key={i}
+            className={cn(
+              'rounded px-[3px] font-semibold',
+              part.isMe || part.everyone
+                ? 'bg-brand/25 text-brand-strong'
+                : 'text-brand-strong'
+            )}
+          >
+            {part.value}
+          </span>
+        ) : (
+          <span key={i}>{part.value}</span>
+        )
+      )}
+    </>
+  );
+}
+
+/**
+ * "3 replies" under a message that started a thread.
+ *
+ * Only ever rendered on a root, because replies do not appear in the timeline
+ * at all — this chip is the only door into the panel from here.
+ */
+export function ThreadChip({ count, lastReplyAt, onOpen }) {
+  if (!count) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        feedback('open');
+        onOpen?.();
+      }}
+      className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-brand-tint px-2.5 py-1 text-[12px] font-semibold text-brand-strong transition-colors hover:brightness-95"
+    >
+      <MessagesSquare size={13} />
+      {count === 1 ? '1 reply' : count + ' replies'}
+      {lastReplyAt && (
+        <span className="font-normal opacity-70">· {bubbleTime(lastReplyAt)}</span>
+      )}
+    </button>
+  );
 }
 
 function QuotedReply({ reply, isMine }) {

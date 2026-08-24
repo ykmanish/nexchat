@@ -20,6 +20,10 @@ router.delete('/:id', conv.deleteConversation);
 router.post('/:id/members', conv.addMembers);
 router.delete('/:id/members/:userId', conv.removeMember);
 router.post('/:id/leave', conv.leaveConversation);
+
+router.get('/:id/bans', conv.listBans);
+router.post('/:id/bans/:userId', validate(v.banSchema), conv.banMember);
+router.delete('/:id/bans/:userId', conv.unbanMember);
 router.patch('/:id/members/:userId/role', conv.setRole);
 
 router.patch('/:id/state', validate(v.stateSchema), conv.updateState);

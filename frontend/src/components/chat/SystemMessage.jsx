@@ -15,7 +15,23 @@ const SYSTEM_TEXT = {
   'member.joined': (a) => a + ' joined',
   'member.promoted': (a, t) => t + ' is now an admin',
   'member.demoted': (a, t) => t + ' is no longer an admin',
+  'group.banned': (a, t) => a + ' removed and banned ' + t,
+  'group.slowMode': (a, t, meta) =>
+    meta?.seconds
+      ? a + ' set slow mode to ' + slowLabel(meta.seconds)
+      : a + ' turned slow mode off',
 };
+
+/** Reads back a slow-mode gap the way a person would say it. */
+function slowLabel(seconds) {
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) {
+    const m = Math.round(seconds / 60);
+    return m + (m === 1 ? ' minute' : ' minutes');
+  }
+  const h = Math.round(seconds / 3600);
+  return h + (h === 1 ? ' hour' : ' hours');
+}
 
 export function SystemMessage({ message }) {
   const user = useAuth((s) => s.user);

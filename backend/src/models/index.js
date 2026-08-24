@@ -7,3 +7,7 @@ export { Conversation } from './Conversation.js';
 export { Message } from './Message.js';
 export { Story } from './Story.js';
 export { Call } from './Call.js';
+export { CallLink } from './CallLink.js';
+export { Passkey, WebAuthnChallenge } from './Passkey.js';
+export { Backup } from './Backup.js';
+export { Snapshot } from './Snapshot.js';

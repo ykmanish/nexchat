@@ -239,6 +239,33 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
               </div>
             )}
 
+            {/* ── admin controls ──
+                Their own card, above the destructive block: these change what
+                other people can do, and should not sit next to "Leave". */}
+            {!isDirect && isAdmin && (
+              <div className="mx-4 mb-3 overflow-hidden rounded-2xl bg-surface-2">
+                <ListButton
+                  icon={ShieldCheck}
+                  label="Moderation"
+                  sublabel={
+                    [
+                      conversation.settings?.slowModeSeconds
+                        ? 'Slow mode on'
+                        : 'Slow mode off',
+                      conversation.bannedCount
+                        ? conversation.bannedCount +
+                          (conversation.bannedCount === 1 ? ' banned' : ' banned')
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  }
+                  chevron
+                  onClick={() => useUI.getState().openSheet('moderation', { conversation })}
+                />
+              </div>
+            )}
+
             {/* ── destructive ── */}
             <div className="mx-4 overflow-hidden rounded-2xl bg-surface-2">
               <ListButton

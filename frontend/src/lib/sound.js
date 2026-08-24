@@ -125,6 +125,14 @@ export const sounds = {
     tone({ freq: 1760, duration: 0.18, gain: 0.05, delay: 0.055 });
   },
 
+  /** Someone @-named you. Deliberately more insistent than `receive`: it is the
+   *  one message that gets through a muted chat, so it has to sound different. */
+  mention: () => {
+    tone({ freq: 1046, duration: 0.13, gain: 0.26, type: 'sine' });
+    tone({ freq: 1568, duration: 0.13, gain: 0.18, delay: 0.1 });
+    tone({ freq: 2093, duration: 0.2, gain: 0.1, delay: 0.2 });
+  },
+
   /** Fired when a message you sent is read. */
   seen: () => tone({ freq: 1560, duration: 0.06, gain: 0.08 }),
 
@@ -247,6 +255,7 @@ export function feedback(kind = 'tap') {
     select: haptics.selection,
     send: haptics.light,
     receive: haptics.medium,
+    mention: haptics.warning,
     react: haptics.impact,
     open: haptics.light,
     close: haptics.light,

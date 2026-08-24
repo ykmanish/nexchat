@@ -57,6 +57,14 @@ export function serialize(conv, userId, viewer = null) {
   const seenBy = viewer || { _id: userId, contacts: [] };
   const peer = doc.type === 'direct' ? visibleUser(others[0]?.user, seenBy) : null;
 
+  /* `lastMessage` is one field shared by everyone in the chat, but clearing is
+     per-person — so it cannot simply be nulled. Hiding it for whoever cleared
+     past it is what stops a cleared chat still showing its last line in the
+     sidebar, which is what "clear" is supposed to have dealt with. */
+  const clearedAt = me?.clearedAt ? new Date(me.clearedAt) : null;
+  const clearedPastLast =
+    clearedAt && doc.lastMessageAt && new Date(doc.lastMessageAt) <= clearedAt;
+
   return {
     id: doc._id,
     _id: doc._id,
@@ -76,17 +84,20 @@ export function serialize(conv, userId, viewer = null) {
     createdBy: doc.createdBy,
     parentCommunity: doc.parentCommunity,
     isAnnouncement: doc.isAnnouncement,
-    lastMessage: doc.lastMessage || null,
+    lastMessage: clearedPastLast ? null : doc.lastMessage || null,
     lastMessageAt: doc.lastMessageAt,
     seq: doc.seq,
     pinnedMessages: doc.pinnedMessages || [],
     inviteCode: doc.inviteCode,
     settings: doc.settings,
+    bannedCount: (doc.bans || []).length,
     // per-viewer state
     unreadCount: me?.unreadCount ?? 0,
+    mentionCount: me?.mentionCount ?? 0,
     pinned: me?.pinned ?? false,
     muted: me?.muted ?? false,
     mutedUntil: me?.mutedUntil ?? null,
+    muteMode: me?.muteMode ?? 'all',
     archived: me?.archived ?? false,
     draft: me?.draft ?? '',
     lastReadAt: me?.lastReadAt ?? null,
@@ -336,8 +347,32 @@ export const updateConversation = asyncHandler(async (req, res) => {
   if (name !== undefined) conv.name = name;
   if (about !== undefined) conv.about = about;
   if (avatar !== undefined) conv.avatar = avatar;
-  if (settings) Object.assign(conv.settings, settings);
+
+  if (settings) {
+    // whoCanEditInfo governs the chat's identity, not its moderation controls.
+    // A group that lets everyone rename it should still not let everyone
+    // silence it, so these are gated separately.
+    const restricted = ['whoCanSend', 'whoCanEditInfo', 'whoCanAddMembers', 'slowModeSeconds', 'approvalRequired'];
+    const touchesModeration = restricted.some((k) => settings[k] !== undefined);
+    if (conv.type !== 'direct' && touchesModeration && !conv.isAdmin(req.user._id)) {
+      throw ApiError.forbidden('Only admins can change this', 'NOT_ADMIN');
+    }
+    if (settings.slowModeSeconds !== undefined) {
+      const gap = Number(settings.slowModeSeconds);
+      if (!Number.isFinite(gap) || gap < 0 || gap > 21600) {
+        throw ApiError.badRequest('Slow mode must be between 0 and 6 hours', 'BAD_SLOW_MODE');
+      }
+      settings.slowModeSeconds = Math.round(gap);
+    }
+    Object.assign(conv.settings, settings);
+  }
   await conv.save();
+
+  if (settings?.slowModeSeconds !== undefined) {
+    await postSystemMessage(conv, 'group.slowMode', req.user._id, [], {
+      seconds: conv.settings.slowModeSeconds,
+    });
+  }
 
   if (name !== undefined) await postSystemMessage(conv, 'group.renamed', req.user._id, [], { name });
 
@@ -362,7 +397,17 @@ export const addMembers = asyncHandler(async (req, res) => {
     mongoose.isValidObjectId(id)
   );
   const existing = new Set(conv.memberIds.map(String));
-  const toAdd = await User.find({ _id: { $in: ids.filter((id) => !existing.has(id)) } }).select('_id');
+
+  // Adding a banned person back would let any member undo an admin's decision.
+  // Naming one explicitly is an error; sweeping one up in a bulk add is not, so
+  // it is filtered rather than rejected.
+  const banned = ids.filter((id) => conv.isBanned(id));
+  if (banned.length && banned.length === ids.length) {
+    throw ApiError.forbidden('That person is banned from this chat', 'BANNED');
+  }
+
+  const wanted = ids.filter((id) => !existing.has(id) && !conv.isBanned(id));
+  const toAdd = await User.find({ _id: { $in: wanted } }).select('_id');
 
   if (!toAdd.length) throw ApiError.badRequest('Everyone is already in this chat', 'NO_NEW_MEMBERS');
 
@@ -412,6 +457,93 @@ export const removeMember = asyncHandler(async (req, res) => {
 
   res.json({ success: true, message: 'Member removed' });
 });
+
+/* ────────────────────────────── moderation ────────────────────────────── */
+
+/**
+ * Removing someone and barring them. A plain kick is undone by the invite link
+ * they still have in their scrollback, so "remove" on its own is not a
+ * moderation tool — this is the one that holds.
+ */
+export const banMember = asyncHandler(async (req, res) => {
+  const conv = await loadConversation(req.params.id, req.user._id, { populate: false });
+  if (conv.type === 'direct') throw ApiError.badRequest('Block the person instead', 'DIRECT');
+  if (!conv.isAdmin(req.user._id)) throw ApiError.forbidden('Only admins can do that', 'NOT_ADMIN');
+
+  const targetId = req.params.userId;
+  if (!mongoose.isValidObjectId(targetId)) throw ApiError.badRequest('Bad user id', 'BAD_ID');
+  if (String(targetId) === String(req.user._id)) {
+    throw ApiError.badRequest('You cannot ban yourself', 'SELF');
+  }
+
+  const target = conv.participantOf(targetId);
+  // An owner outranks an admin; without this, one admin could remove the person
+  // who made the group.
+  if (target && (target.role === 'owner' || (target.role === 'admin' && !isOwner(conv, req.user._id)))) {
+    throw ApiError.forbidden('You cannot ban another admin', 'OUTRANKED');
+  }
+
+  if (conv.isBanned(targetId)) throw ApiError.conflict('Already banned', 'ALREADY_BANNED');
+
+  conv.bans.push({
+    user: targetId,
+    by: req.user._id,
+    reason: (req.body.reason || '').slice(0, 200) || null,
+  });
+
+  if (target && !target.leftAt) {
+    target.leftAt = new Date();
+    conv.syncMemberIds();
+  }
+  await conv.save();
+
+  await postSystemMessage(conv, 'group.banned', req.user._id, [targetId]);
+
+  getIO()?.to('conversation:' + conv._id).emit('conversation:banned', {
+    conversationId: String(conv._id),
+    userId: String(targetId),
+    by: String(req.user._id),
+  });
+  // The person being removed is no longer in the room, so tell them directly.
+  getIO()?.to('user:' + targetId).emit('conversation:removed', {
+    conversationId: String(conv._id),
+    reason: 'banned',
+  });
+
+  res.json({ success: true, bannedCount: conv.bans.length });
+});
+
+export const unbanMember = asyncHandler(async (req, res) => {
+  const conv = await loadConversation(req.params.id, req.user._id, { populate: false });
+  if (!conv.isAdmin(req.user._id)) throw ApiError.forbidden('Only admins can do that', 'NOT_ADMIN');
+
+  const before = conv.bans.length;
+  conv.bans = conv.bans.filter((b) => String(b.user._id || b.user) !== String(req.params.userId));
+  if (conv.bans.length === before) throw ApiError.notFound('Not banned', 'NOT_BANNED');
+
+  await conv.save();
+  res.json({ success: true, bannedCount: conv.bans.length });
+});
+
+export const listBans = asyncHandler(async (req, res) => {
+  const conv = await Conversation.findOne({ _id: req.params.id, memberIds: req.user._id })
+    .populate('bans.user', 'name username avatar avatarColor')
+    .populate('bans.by', 'name');
+  if (!conv) throw ApiError.notFound('Conversation not found', 'NO_CONVERSATION');
+  if (!conv.isAdmin(req.user._id)) throw ApiError.forbidden('Only admins can do that', 'NOT_ADMIN');
+
+  res.json({
+    success: true,
+    bans: (conv.bans || []).map((b) => ({
+      user: b.user,
+      by: b.by,
+      reason: b.reason,
+      at: b.at,
+    })),
+  });
+});
+
+const isOwner = (conv, userId) => conv.participantOf(userId)?.role === 'owner';
 
 export const leaveConversation = asyncHandler(async (req, res) => {
   const conv = await loadConversation(req.params.id, req.user._id);
@@ -463,11 +595,14 @@ export const updateState = asyncHandler(async (req, res) => {
   const me = conv.participantOf(req.user._id);
   if (!me) throw ApiError.notFound('Not a member', 'NOT_MEMBER');
 
-  const { pinned, muted, mutedUntil, archived, draft, wallpaper } = req.body;
+  const { pinned, muted, mutedUntil, muteMode, archived, draft, wallpaper } = req.body;
   if (pinned !== undefined) me.pinned = !!pinned;
   if (muted !== undefined) {
     me.muted = !!muted;
     me.mutedUntil = muted && mutedUntil ? new Date(mutedUntil) : null;
+  }
+  if (muteMode !== undefined && ['all', 'mentions'].includes(muteMode)) {
+    me.muteMode = muteMode;
   }
   if (archived !== undefined) me.archived = !!archived;
   if (draft !== undefined) me.draft = String(draft).slice(0, 5000);
@@ -481,6 +616,7 @@ export const updateState = asyncHandler(async (req, res) => {
       pinned: me.pinned,
       muted: me.muted,
       mutedUntil: me.mutedUntil,
+      muteMode: me.muteMode,
       archived: me.archived,
       draft: me.draft,
       wallpaper: me.wallpaper,
@@ -497,6 +633,7 @@ export const markRead = asyncHandler(async (req, res) => {
 
   const now = new Date();
   me.unreadCount = 0;
+  me.mentionCount = 0;
   me.lastReadAt = now;
   if (req.body.messageId && mongoose.isValidObjectId(req.body.messageId)) {
     me.lastReadMessage = req.body.messageId;
@@ -578,6 +715,11 @@ export const joinByInvite = asyncHandler(async (req, res) => {
   const conv = await Conversation.findOne({ inviteCode: code });
 
   if (!conv || !conv.inviteEnabled) throw ApiError.notFound('That invite is no longer valid', 'BAD_INVITE');
+
+  // The whole point of a ban is that the link in their scrollback stops working.
+  if (conv.isBanned(req.user._id)) {
+    throw ApiError.forbidden('You cannot rejoin this chat', 'BANNED');
+  }
 
   const existing = conv.participantOf(req.user._id);
   if (existing && !existing.leftAt) {

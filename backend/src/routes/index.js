@@ -8,6 +8,9 @@ import userRoutes from './user.routes.js';
 import uploadRoutes from './upload.routes.js';
 import storyRoutes from './story.routes.js';
 import linkRoutes from './link.routes.js';
+import callRoutes from './call.routes.js';
+import backupRoutes from './backup.routes.js';
+import syncRoutes from './sync.routes.js';
 
 const router = Router();
 
@@ -29,5 +32,8 @@ router.use('/users', userRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/stories', storyRoutes);
 router.use('/links', linkRoutes);
+router.use('/calls', callRoutes);
+router.use('/backups', backupRoutes);
+router.use('/sync', syncRoutes);
 
 export default router;

@@ -24,6 +24,9 @@ export const listMessages = asyncHandler(async (req, res) => {
   const filter = {
     conversation: conv._id,
     deletedFor: { $ne: req.user._id },
+    // Thread replies live in their own panel. Leaving them in the timeline was
+    // the thing that made every previous attempt at threads feel like clutter.
+    threadRoot: null,
   };
   if (me?.clearedAt) filter.createdAt = { $gt: me.clearedAt };
   if (before) {
@@ -50,6 +53,48 @@ export const listMessages = asyncHandler(async (req, res) => {
     messages: page.reverse().map((m) => hydrate(m, req.user._id)),
     hasMore,
     cursor: page.length ? page[0].createdAt : null,
+  });
+});
+
+/**
+ * One thread, oldest first. Small enough to send whole: a thread that needs
+ * pagination has outgrown being a thread.
+ */
+export const listThread = asyncHandler(async (req, res) => {
+  const root = await Message.findById(req.params.id);
+  if (!root) throw ApiError.notFound('Message not found', 'NO_MESSAGE');
+
+  const conv = await requireMembership(root.conversation, req.user._id);
+  // Asking for a reply's thread should give you the thread it belongs to,
+  // rather than an empty one.
+  const rootId = root.threadRoot || root._id;
+
+  const [rootDoc, replies] = await Promise.all([
+    Message.findById(rootId)
+      .populate('sender', SENDER_FIELDS)
+      .populate(REPLY_POPULATE)
+      .populate('reactions.user', 'name avatar avatarColor'),
+    Message.find({
+      conversation: conv._id,
+      threadRoot: rootId,
+      deletedFor: { $ne: req.user._id },
+    })
+      .populate('sender', SENDER_FIELDS)
+      .populate('reactions.user', 'name avatar avatarColor')
+      .sort({ createdAt: 1 })
+      .limit(500),
+  ]);
+
+  if (!rootDoc) throw ApiError.notFound('Message not found', 'NO_MESSAGE');
+
+  res.json({
+    success: true,
+    conversationId: String(conv._id),
+    root: hydrate(rootDoc, req.user._id),
+    replies: replies.map((m) => hydrate(m, req.user._id)),
+    following: (rootDoc.thread?.participants || [])
+      .map(String)
+      .includes(String(req.user._id)),
   });
 });
 
@@ -122,7 +167,18 @@ export const deleteMessage = asyncHandler(async (req, res) => {
     msg.keys = [];
     msg.attachments = [];
     msg.reactions = [];
+    msg.mentions = [];
+    msg.mentionsEveryone = false;
     await msg.save();
+
+    // The root advertises a reply count; a deleted reply must stop being
+    // counted, or the panel promises more than it can show.
+    if (msg.threadRoot) {
+      await Message.updateOne(
+        { _id: msg.threadRoot, 'thread.replyCount': { $gt: 0 } },
+        { $inc: { 'thread.replyCount': -1 } }
+      );
+    }
 
     getIO()?.to('conversation:' + conv._id).emit('message:deleted', {
       conversationId: String(conv._id),

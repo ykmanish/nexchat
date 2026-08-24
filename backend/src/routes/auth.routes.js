@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as auth from '../controllers/auth.controller.js';
+import * as passkeys from '../controllers/passkey.controller.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { authLimiter, otpLimiter } from '../middleware/rateLimit.js';
@@ -21,6 +22,28 @@ router.post('/logout', authenticate, auth.logout);
 router.post('/forgot-password', otpLimiter, validate(v.forgotSchema), auth.forgotPassword);
 router.post('/reset-password', authLimiter, validate(v.resetSchema), auth.resetPassword);
 router.post('/change-password', authenticate, validate(v.changePasswordSchema), auth.changePassword);
+
+/* Passkeys. Enrolling needs a session; signing in obviously cannot have one,
+   so those two go through the auth limiter instead. */
+router.post('/passkeys/register/options', authenticate, passkeys.registerOptions);
+router.post(
+  '/passkeys/register/verify',
+  authenticate,
+  validate(v.passkeyVerifySchema),
+  passkeys.registerVerify
+);
+router.post('/passkeys/login/options', authLimiter, passkeys.loginOptions);
+router.post(
+  '/passkeys/login/verify',
+  authLimiter,
+  validate(v.passkeyVerifySchema),
+  passkeys.loginVerify
+);
+router.post('/passkeys/login/complete', authLimiter, auth.passkeyLoginComplete);
+
+router.get('/passkeys', authenticate, passkeys.listPasskeys);
+router.patch('/passkeys/:id', authenticate, passkeys.renamePasskey);
+router.delete('/passkeys/:id', authenticate, passkeys.deletePasskey);
 
 router.get('/me', authenticate, auth.me);
 

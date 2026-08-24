@@ -2,20 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
-import {
-  Pin,
-  BellOff,
-  Check,
-  CheckCheck,
-  Image as ImageIcon,
-  Mic,
-  FileText,
-  Video,
-  Phone,
-  Users,
-  Archive,
-  Clock,
-} from 'lucide-react';
+import { Archive, AtSign, BellOff, Check, CheckCheck, Clock, FileText, Image as ImageIcon, Mic, Phone, Pin, Users, Video } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { useChat } from '@/store/chat';
 import { useUI } from '@/store/ui';
@@ -143,6 +130,7 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
     (presence[conversation.peer._id] ?? conversation.peer.presence === 'online');
 
   const unread = conversation.unreadCount || 0;
+  const mentions = conversation.mentionCount || 0;
 
   const openMenu = (clientX, clientY) => {
     feedback('select');
@@ -267,13 +255,29 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
               )}
               {conversation.muted && <BellOff size={14} className="text-ink-faint" />}
               {conversation.pinned && <Pin size={14} className="text-ink-faint" />}
+              {/* Shown even when the chat is muted and the unread pill has gone
+                  grey: being named is the one thing a mute is not meant to
+                  hide, so it keeps full colour. */}
+              {mentions > 0 && (
+                <motion.span
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  aria-label={mentions === 1 ? 'You were mentioned' : mentions + ' mentions'}
+                  className="grid h-[20px] min-w-[20px] place-items-center rounded-full bg-brand px-1 text-[12px] font-bold text-brand-ink"
+                >
+                  <AtSign size={12} strokeWidth={3} />
+                </motion.span>
+              )}
+
               {unread > 0 && (
                 <motion.span
                   initial={{ scale: 0.6, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   className={cn(
                     'grid h-[20px] min-w-[20px] place-items-center rounded-full px-1.5 text-[11px] font-semibold',
-                    conversation.muted ? 'bg-ink-faint text-white' : 'bg-brand text-brand-ink'
+                    conversation.muted && !mentions
+                      ? 'bg-ink-faint text-white'
+                      : 'bg-brand text-brand-ink'
                   )}
                 >
                   {unread > 99 ? '99+' : unread}

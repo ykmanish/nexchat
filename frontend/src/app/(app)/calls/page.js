@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Phone, Video, PhoneMissed, PhoneOutgoing, PhoneIncoming, Plus } from 'lucide-react';
+import {
+  Phone, Video, PhoneMissed, PhoneOutgoing, PhoneIncoming, Plus, Link2,
+} from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
 import { useUI } from '@/store/ui';
@@ -81,12 +83,22 @@ export default function CallsPage() {
       <header className="safe-top shrink-0 px-5 pb-3 pt-4">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-[27px] tracking-tight">Calls</h1>
+          <div className="flex items-center gap-1">
+          <IconButton
+            icon={Link2}
+            label="Call links"
+            onClick={() => {
+              feedback('open');
+              openSheet('callLinks');
+            }}
+          />
           <IconButton
             icon={Plus}
             label="New call"
             variant="subtle"
             onClick={() => openSheet('newChat')}
           />
+          </div>
         </div>
       </header>
 

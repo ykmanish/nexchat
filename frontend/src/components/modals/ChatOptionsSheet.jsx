@@ -1,23 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import {
-  Info,
-  BellOff,
-  Bell,
-  Pin,
-  PinOff,
-  Archive,
-  ArchiveRestore,
-  Trash2,
-  Search,
-  Brush,
-  CheckCheck,
-  Settings,
-  MonitorSmartphone,
-  Star,
-  Users,
-} from 'lucide-react';
+import { Archive, ArchiveRestore, AtSign, Bell, BellOff, Brush, CheckCheck, Info, MonitorSmartphone, Pin, PinOff, Search, Settings, Star, Trash2, Users } from 'lucide-react';
 import { ActionSheet } from '@/components/ui/Sheet';
 import { useChat } from '@/store/chat';
 import { useUI, toast } from '@/store/ui';
@@ -58,6 +42,21 @@ export function ChatOptionsSheet({ open, onClose, conversation: initial }) {
           icon: conversation.muted ? Bell : BellOff,
           onClick: () => setConversationState(conversation._id, { muted: !conversation.muted }),
         },
+        /* Only offered for groups, and only while muted — in a direct chat
+           every message is addressed to you, so "mentions only" would just be
+           a confusing way to spell "unmuted". */
+        {
+          label:
+            conversation.muteMode === 'mentions'
+              ? 'Notify for everything'
+              : 'Only notify for @mentions',
+          icon: AtSign,
+          hidden: !conversation.muted || conversation.type === 'direct',
+          onClick: () =>
+            setConversationState(conversation._id, {
+              muteMode: conversation.muteMode === 'mentions' ? 'all' : 'mentions',
+            }),
+        },
         {
           label: conversation.pinned ? 'Unpin chat' : 'Pin chat',
           icon: conversation.pinned ? PinOff : Pin,
@@ -80,9 +79,7 @@ export function ChatOptionsSheet({ open, onClose, conversation: initial }) {
           danger: true,
           onClick: async () => {
             await api.post('/conversations/' + conversation._id + '/clear').catch(() => {});
-            useChat.setState((s) => ({
-              messages: { ...s.messages, [conversation._id]: [] },
-            }));
+            await useChat.getState().clearLocalHistory(conversation._id);
             toast.success('Chat cleared');
           },
         },

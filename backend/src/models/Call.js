@@ -3,7 +3,11 @@ import mongoose from 'mongoose';
 const callSchema = new mongoose.Schema(
   {
     callId: { type: String, required: true, unique: true, index: true },
-    conversation: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true },
+    /** Null for a call reached by link: there is no chat behind it, which is
+     *  the entire point of a link. */
+    conversation: {
+      type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', default: null, index: true,
+    },
     initiator: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     mode: { type: String, enum: ['audio', 'video'], default: 'audio' },
     status: {

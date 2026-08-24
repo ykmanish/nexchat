@@ -14,6 +14,7 @@ import { ThreadHeader } from './ThreadHeader';
 import { ThreadSearch } from './ThreadSearch';
 import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
+import { ReplyPanel } from './ReplyPanel';
 import { SystemMessage } from './SystemMessage';
 import { TypingBubble } from './TypingBubble';
 import { MessageActions } from './MessageActions';
@@ -34,6 +35,9 @@ export function Thread({ conversationId }) {
 
   const user = useAuth((s) => s.user);
   const selection = useUI((s) => s.selection);
+  const repliesFor = useUI((s) => s.repliesFor);
+  const openReplies = useUI((s) => s.openReplies);
+  const closeReplies = useUI((s) => s.closeReplies);
   const searchOpen = useUI((s) => s.search.open);
   const closeSearch = useUI((s) => s.closeSearch);
 
@@ -159,11 +163,15 @@ export function Thread({ conversationId }) {
         className="scroll-soft relative z-[1] min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
       >
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end pb-2 pt-3">
-          {/* encryption notice at the very top of a conversation */}
+          {/* Encryption notice at the very top of a conversation. Green rather
+              than the old amber: this is reassurance, not a warning, and amber
+              reads as the latter. Both pairs come from the fixed `wa` scale so
+              the contrast holds whatever the accent is set to — deep green on
+              pale green in light, pale on deep in dark. */}
           {!hasMore && (
-            <div className="mx-4 mb-4 mt-2 flex max-w-[430px] items-start gap-1.5 self-center rounded-lg bg-[#fdf4c8] px-3 py-2 sm:mx-auto dark:bg-[#1d282f]">
-              <Lock size={12} className="mt-[3px] shrink-0 text-[#8a7a2f] dark:text-[#ffd279]" />
-              <p className="text-[12.5px] leading-relaxed text-[#5c5220] dark:text-[#ffd279]">
+            <div className="mx-4 mb-4 mt-2 flex max-w-[430px] items-start gap-1.5 self-center rounded-lg bg-wa-100 px-3 py-2 sm:mx-auto dark:bg-wa-800/40">
+              <Lock size={12} className="mt-[3px] shrink-0 text-wa-800 dark:text-wa-200" />
+              <p className="text-[12.5px] leading-relaxed text-wa-800 dark:text-wa-100">
                 Messages are end-to-end encrypted. No one outside this chat, not even Chax,
                 can read them.
               </p>
@@ -189,6 +197,7 @@ export function Thread({ conversationId }) {
                     conversation={conversation}
                     currentUserId={user?._id}
                     selecting={selection.length > 0}
+                    onOpenThread={openReplies}
                   />
                 )
               )}
@@ -236,6 +245,19 @@ export function Thread({ conversationId }) {
       </div>
 
       <MessageActions conversation={conversation} />
+
+      {/* Over the conversation rather than beside it: on a phone there is no
+          "beside", and on desktop the drawer still wants the chat behind it. */}
+      <AnimatePresence>
+        {repliesFor && (
+          <ReplyPanel
+            key={repliesFor}
+            conversationId={conversationId}
+            rootId={repliesFor}
+            onClose={closeReplies}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

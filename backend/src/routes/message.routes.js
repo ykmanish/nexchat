@@ -18,6 +18,7 @@ router.post('/delivered', validate(v.receiptSchema), msg.markDelivered);
 router.post('/delete-many', validate(v.deleteManySchema), msg.deleteMany);
 
 router.get('/:id', msg.getMessage);
+router.get('/:id/thread', msg.listThread);
 router.patch('/:id', validate(v.editMessageSchema), msg.editMessage);
 router.delete('/:id', msg.deleteMessage);
 router.post('/:id/reactions', validate(v.reactionSchema), msg.toggleReaction);

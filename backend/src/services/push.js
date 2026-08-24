@@ -128,23 +128,60 @@ export async function pushTyping({ conversation, sender, recipients }) {
   );
 }
 
+/**
+ * Whether this particular person should hear about this particular message.
+ *
+ * Mute used to be a client-side nicety — the server pushed regardless and the
+ * app decided whether to make a sound, which meant a muted group still lit up
+ * a locked phone. It is decided here now. 'mentions' mode is the interesting
+ * one: silent for ordinary traffic, audible when the message names you, which
+ * is the only setting that makes a busy group survivable.
+ */
+function shouldNotify(participant, { mentioned }) {
+  if (!participant) return true;
+
+  const mutedNow =
+    participant.muted && (!participant.mutedUntil || participant.mutedUntil > new Date());
+  if (!mutedNow) return true;
+
+  return participant.muteMode === 'mentions' && mentioned;
+}
+
 /** Fan-out helper for a new message. */
-export async function pushNewMessage({ conversation, message, sender, recipients }) {
+export async function pushNewMessage({
+  conversation,
+  message,
+  sender,
+  recipients,
+  mentioned = new Set(),
+  threadRoot = null,
+}) {
   if (!ready) return;
 
-  const payload = {
+  const basePayload = {
     type: 'message',
     conversationId: String(conversation._id),
     messageId: String(message._id),
     senderName: sender?.name || 'Someone',
     conversationName: conversation.type === 'direct' ? sender?.name : conversation.name,
     isGroup: conversation.type !== 'direct',
+    threadRoot: threadRoot ? String(threadRoot) : null,
     at: message.createdAt,
   };
 
   await Promise.all(
-    recipients.map((r) =>
-      pushToUser(r.userId, payload, { skipDeviceIds: [] }).catch(() => 0)
-    )
+    recipients.map((r) => {
+      const participant = conversation.participantOf?.(r.userId);
+      const wasMentioned = mentioned.has?.(String(r.userId)) || false;
+      if (!shouldNotify(participant, { mentioned: wasMentioned })) return 0;
+
+      // A mention is worth marking: the service worker raises it differently
+      // from ordinary traffic, and it is the reason a muted chat spoke at all.
+      return pushToUser(
+        r.userId,
+        { ...basePayload, mention: wasMentioned },
+        { skipDeviceIds: [] }
+      ).catch(() => 0);
+    })
   );
 }

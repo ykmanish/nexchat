@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ArrowRight, QrCode, ShieldCheck, MonitorSmartphone, MessageCircle } from 'lucide-react';
@@ -14,6 +15,26 @@ const POINTS = [
 ];
 
 export default function WelcomePage() {
+  /**
+   * Read after mount rather than with useSearchParams.
+   *
+   * That hook makes the route render on demand unless it is wrapped in a
+   * Suspense boundary, and a boundary whose fallback is empty renders nothing on
+   * the server and content on the client — which is a hydration mismatch. Doing
+   * it in an effect means both first renders agree and the links fill in a beat
+   * later, which is invisible and costs nothing.
+   */
+  const [next, setNext] = useState(null);
+
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get('next');
+    // Relative only: an absolute URL here would make this an open redirect.
+    if (value && value.startsWith('/') && !value.startsWith('//')) setNext(value);
+  }, []);
+
+  /** Carries the intended destination through sign-up or sign-in. */
+  const withNext = (path) => (next ? path + '?next=' + encodeURIComponent(next) : path);
+
   return (
     <AuthCard>
       <AuthHeading
@@ -39,13 +60,13 @@ export default function WelcomePage() {
       </ul>
 
       <div className="space-y-3">
-        <Link href="/signup" className="block">
+        <Link href={withNext('/signup')} className="block">
           <Button size="block" iconRight={ArrowRight} sound="select">
             Create an account
           </Button>
         </Link>
 
-        <Link href="/login" className="block">
+        <Link href={withNext('/login')} className="block">
           <Button size="block" variant="secondary" sound="tap">
             I already have an account
           </Button>

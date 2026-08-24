@@ -3,15 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "NexChat API — realtime end-to-end encrypted messaging backend",
+  "description": "NexChat API \u2014 realtime end-to-end encrypted messaging backend",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "dev:mem": "cross-env USE_MEMORY_DB=true nodemon src/server.js",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "test:features": "node scripts/feature-test.mjs"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^13.3.2",
     "argon2": "^0.41.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",

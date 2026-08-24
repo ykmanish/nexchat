@@ -16,6 +16,7 @@ import {
   Ban,
   Volume2,
   ShieldCheck,
+  DatabaseBackup,
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { useUI, toast } from '@/store/ui';
@@ -54,6 +55,12 @@ export default function SettingsPage() {
           label: 'Linked devices',
           sublabel: (devices?.length || 1) + ' active',
           href: '/settings/devices',
+        },
+        {
+          icon: DatabaseBackup,
+          label: 'Chat backup',
+          sublabel: 'Keep a copy you can read',
+          href: '/settings/backup',
         },
       ],
     },

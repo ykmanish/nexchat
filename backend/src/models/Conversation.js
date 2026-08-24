@@ -11,8 +11,16 @@ const participantSchema = new mongoose.Schema(
     pinned: { type: Boolean, default: false },
     muted: { type: Boolean, default: false },
     mutedUntil: { type: Date, default: null },
+    /** How deep the mute goes. 'mentions' is what makes a busy group bearable:
+     *  silent for ordinary traffic, still rings when someone @-names you. */
+    muteMode: { type: String, enum: ['all', 'mentions'], default: 'all' },
     archived: { type: Boolean, default: false },
     unreadCount: { type: Number, default: 0 },
+    /** Counted separately from unreadCount so the chat list can show an @ badge
+     *  that survives "mark as read" on the ordinary unread count. */
+    mentionCount: { type: Number, default: 0 },
+    /** Last send, for slow mode. Not lastMessageAt — that moves for everyone. */
+    lastSentAt: { type: Date, default: null },
     lastReadAt: { type: Date, default: null },
     lastReadMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     clearedAt: { type: Date, default: null },
@@ -63,7 +71,21 @@ const conversationSchema = new mongoose.Schema(
       whoCanAddMembers: { type: String, enum: ['everyone', 'admins'], default: 'everyone' },
       disappearingSeconds: { type: Number, default: 0 },
       approvalRequired: { type: Boolean, default: false },
+      /** Minimum gap between one member's messages. Admins are exempt. */
+      slowModeSeconds: { type: Number, default: 0, min: 0, max: 21600 },
     },
+
+    /** Removed and barred from coming back — a plain kick leaves nothing to
+     *  stop the same person walking in through the invite link again. */
+    bans: [
+      {
+        _id: false,
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        reason: { type: String, default: null, maxlength: 200 },
+        at: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );
@@ -82,6 +104,10 @@ conversationSchema.methods.participantOf = function participantOf(userId) {
 conversationSchema.methods.isAdmin = function isAdmin(userId) {
   const p = this.participantOf(userId);
   return !!p && (p.role === 'admin' || p.role === 'owner');
+};
+
+conversationSchema.methods.isBanned = function isBanned(userId) {
+  return (this.bans || []).some((b) => String(b.user._id || b.user) === String(userId));
 };
 
 conversationSchema.methods.syncMemberIds = function syncMemberIds() {

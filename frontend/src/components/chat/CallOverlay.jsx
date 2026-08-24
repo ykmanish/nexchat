@@ -12,6 +12,9 @@ import {
   VideoOff,
   Volume2,
   Minimize2,
+  ScreenShare,
+  ScreenShareOff,
+  MonitorUp,
 } from 'lucide-react';
 import { useUI, toast } from '@/store/ui';
 import { Avatar } from '@/components/ui/Avatar';
@@ -35,6 +38,8 @@ export function CallOverlay() {
 
   const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [peerSharing, setPeerSharing] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [minimized, setMinimized] = useState(false);
 
@@ -42,6 +47,11 @@ export function CallOverlay() {
   const remoteVideo = useRef(null);
   const pc = useRef(null);
   const localStream = useRef(null);
+  /* The camera track is set aside while a screen is being shared, so stopping
+     the share can put the original back rather than renegotiating from nothing. */
+  const cameraTrack = useRef(null);
+  const screenStream = useRef(null);
+  const videoSender = useRef(null);
   const stopRinging = useRef(null);
   const timer = useRef(null);
 
@@ -90,7 +100,12 @@ export function CallOverlay() {
         const connection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         pc.current = connection;
 
-        stream.getTracks().forEach((track) => connection.addTrack(track, stream));
+        stream.getTracks().forEach((track) => {
+          const sender = connection.addTrack(track, stream);
+          // Kept so a screen share can replace what this sender is carrying;
+          // replaceTrack needs no new offer, which is why sharing is instant.
+          if (track.kind === 'video') videoSender.current = sender;
+        });
 
         connection.ontrack = (e) => {
           if (remoteVideo.current) remoteVideo.current.srcObject = e.streams[0];
@@ -129,6 +144,11 @@ export function CallOverlay() {
           }
         });
 
+        /* Which incoming track is a screen is not something the peer can work
+           out for itself, so the other side says so. Kept separate from
+           media-state: a shared screen changes the layout, a muted mic does not. */
+        socket?.on('call:screen-share', ({ on }) => setPeerSharing(!!on));
+
         // The caller drives the handshake.
         if (call.direction === 'outgoing') {
           const offer = await connection.createOffer();
@@ -157,6 +177,10 @@ export function CallOverlay() {
       pc.current = null;
       localStream.current?.getTracks().forEach((t) => t.stop());
       localStream.current = null;
+      screenStream.current?.getTracks().forEach((t) => t.stop());
+      screenStream.current = null;
+      cameraTrack.current = null;
+      videoSender.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, call?.callId]);
@@ -191,6 +215,94 @@ export function CallOverlay() {
     });
     emit('call:media-state', { callId: call.callId, muted: next, videoOff });
     feedback('tap');
+  }
+
+  const canShare = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
+
+  /**
+   * Screen sharing.
+   *
+   * The screen goes out as an ordinary video track on the connection that is
+   * already up: replaceTrack swaps what the existing sender carries, so there is
+   * no second offer, no glare, and no visible pause. An audio-only call has no
+   * video sender to swap, so one is added — and that case *does* need a fresh
+   * offer, which is the only reason the two paths differ.
+   */
+  async function toggleShare() {
+    if (!canShare) return toast.error('This browser cannot share a screen');
+
+    if (sharing) return stopSharing();
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 15 },
+        // Tab audio where the browser offers it; the user can decline in the
+        // picker and the share still works.
+        audio: false,
+      });
+    } catch {
+      // The picker being dismissed is not an error worth reporting.
+      return;
+    }
+
+    screenStream.current = stream;
+    const track = stream.getVideoTracks()[0];
+
+    // The browser's own "Stop sharing" bar is outside our UI, so the track
+    // ending is the only signal that it was used.
+    track.onended = () => stopSharing();
+
+    try {
+      if (videoSender.current) {
+        cameraTrack.current = videoSender.current.track;
+        await videoSender.current.replaceTrack(track);
+      } else {
+        videoSender.current = pc.current?.addTrack(track, stream);
+        await renegotiate();
+      }
+    } catch (err) {
+      stream.getTracks().forEach((t) => t.stop());
+      screenStream.current = null;
+      return toast.error(err.message || 'Could not start sharing');
+    }
+
+    if (localVideo.current) localVideo.current.srcObject = stream;
+    setSharing(true);
+    emit('call:screen-share', { callId: call.callId, on: true });
+    feedback('select');
+  }
+
+  async function stopSharing() {
+    screenStream.current?.getTracks().forEach((t) => t.stop());
+    screenStream.current = null;
+
+    // Put the camera back if there was one. On an audio call there was not, and
+    // the sender is left carrying nothing, which the peer renders as no video.
+    try {
+      await videoSender.current?.replaceTrack(cameraTrack.current || null);
+    } catch {
+      /* the connection may already be closing */
+    }
+    cameraTrack.current = null;
+
+    if (localVideo.current) localVideo.current.srcObject = localStream.current;
+    setSharing(false);
+    emit('call:screen-share', { callId: call.callId, on: false });
+    feedback('tap');
+  }
+
+  /** Only needed when a track is added rather than swapped. */
+  async function renegotiate() {
+    const connection = pc.current;
+    if (!connection) return;
+    const offer = await connection.createOffer();
+    await connection.setLocalDescription(offer);
+    emit('call:offer', {
+      callId: call.callId,
+      to: call.from?.id || call.peerId,
+      sdp: offer,
+    });
   }
 
   function toggleVideo() {
@@ -245,8 +357,20 @@ export function CallOverlay() {
                 ref={remoteVideo}
                 autoPlay
                 playsInline
-                className="absolute inset-0 h-full w-full bg-ink object-cover"
+                className={cn(
+                  'absolute inset-0 h-full w-full bg-ink',
+                  // A face can be cropped to fill; a shared screen cannot —
+                  // the edges are where the toolbars and the text live.
+                  peerSharing ? 'object-contain' : 'object-cover'
+                )}
               />
+
+              {peerSharing && !minimized && (
+                <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-[12.5px] font-medium text-white backdrop-blur">
+                  <MonitorUp size={14} />
+                  {(call?.from?.name || 'They').split(' ')[0]} is sharing their screen
+                </div>
+              )}
               <video
                 ref={localVideo}
                 autoPlay
@@ -345,6 +469,15 @@ export function CallOverlay() {
                         tone={videoOff ? 'active' : 'glass'}
                         label="Camera"
                         onClick={toggleVideo}
+                        size="sm"
+                      />
+                    )}
+                    {canShare && (
+                      <CallButton
+                        icon={sharing ? ScreenShareOff : ScreenShare}
+                        tone={sharing ? 'active' : 'glass'}
+                        label={sharing ? 'Stop sharing' : 'Share screen'}
+                        onClick={toggleShare}
                         size="sm"
                       />
                     )}

@@ -24,7 +24,7 @@ const deviceSchema = new mongoose.Schema(
     },
 
     isPrimary: { type: Boolean, default: false },
-    linkedVia: { type: String, enum: ['login', 'qr'], default: 'login' },
+    linkedVia: { type: String, enum: ['login', 'qr', 'passkey'], default: 'login' },
 
     refreshTokenHash: { type: String, default: null, select: false },
     ip: { type: String, default: null },

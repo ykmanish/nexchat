@@ -1,18 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Ban, Eye, UserPlus, Image as ImageIcon, Info, Lock } from 'lucide-react';
+import { Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock } from 'lucide-react';
 import { SettingsShell, SettingsGroup, SettingsRow, Divider } from '@/components/layout/SettingsShell';
 import { Switch, Segmented } from '@/components/ui/Field';
 import { ListButton } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { Sheet } from '@/components/ui/Sheet';
 import { useAuth } from '@/store/auth';
-import { toast } from '@/store/ui';
+import { toast, useUI } from '@/store/ui';
 import { api } from '@/lib/api';
 import { feedback } from '@/lib/sound';
 import { AppLockSheet } from '@/components/modals/AppLockSheet';
 import { appLock, AUTO_LOCK_OPTIONS } from '@/lib/applock';
+import * as passkeys from '@/lib/passkeys';
 
 /** "On · After 5 minutes · fingerprint and passkey" */
 function lockSummary({ enabled, autoLockSeconds, kinds }) {
@@ -44,6 +45,10 @@ export default function PrivacyPage() {
     autoLockSeconds: 300,
     kinds: [],
   });
+  // null while unknown, so the row does not flash "None yet" at people who
+  // do have passkeys.
+  const [passkeyCount, setPasskeyCount] = useState(null);
+  const openSheet = useUI((s) => s.openSheet);
 
   const refreshLock = () =>
     appLock.config().then((cfg) =>
@@ -62,6 +67,10 @@ export default function PrivacyPage() {
       .then(({ data }) => setBlocked(data.blocked))
       .catch(() => {});
     refreshLock();
+    passkeys
+      .list()
+      .then((list) => setPasskeyCount(list.length))
+      .catch(() => setPasskeyCount(0));
   }, []);
 
   const rows = [
@@ -137,6 +146,23 @@ export default function PrivacyPage() {
           onClick={() => {
             feedback('open');
             setShowLock(true);
+          }}
+        />
+        <Divider />
+        <ListButton
+          icon={KeyRound}
+          label="Passkeys"
+          sublabel={
+            passkeyCount === null
+              ? 'Sign in without a password'
+              : passkeyCount === 0
+                ? 'None yet'
+                : passkeyCount + (passkeyCount === 1 ? ' passkey' : ' passkeys')
+          }
+          chevron
+          onClick={() => {
+            feedback('open');
+            openSheet('passkeys');
           }}
         />
       </SettingsGroup>

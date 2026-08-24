@@ -9,6 +9,9 @@ import { NewStorySheet, StoryViewerSheet } from './StorySheets';
 import { EmojiPickerSheet, MessageInfoSheet, ReactionDetailsSheet } from './MiscSheets';
 import { NewPollSheet, PollVotersSheet } from './PollSheets';
 import { GroupMembersSheet } from './GroupMembersSheet';
+import { ModerationSheet } from './ModerationSheet';
+import { CallLinkSheet } from './CallLinkSheet';
+import { PasskeySheet } from './PasskeySheet';
 
 /** One place that decides which sheet is on screen. */
 export function SheetHost() {
@@ -44,6 +47,9 @@ export function SheetHost() {
       <NewPollSheet open={type === 'newPoll'} onClose={close} {...props} />
       <PollVotersSheet open={type === 'pollVoters'} onClose={close} {...props} />
       <GroupMembersSheet open={type === 'groupMembers'} onClose={close} {...props} />
+      <ModerationSheet open={type === 'moderation'} onClose={close} {...props} />
+      <CallLinkSheet open={type === 'callLinks'} onClose={close} />
+      <PasskeySheet open={type === 'passkeys'} onClose={close} />
 
       <ForwardSheet
         open={!!forwarding}

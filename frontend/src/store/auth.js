@@ -5,6 +5,8 @@ import { api, tokens } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 import { vault } from '@/lib/vault';
 import * as e2ee from '@/lib/e2ee';
+import * as passkeys from '@/lib/passkeys';
+import * as C from '@/lib/crypto';
 import { setSoundEnabled, setHapticsEnabled } from '@/lib/sound';
 import { applyFontScale } from '@/lib/theme';
 import { toast } from '@/store/ui';
@@ -112,6 +114,71 @@ export const useAuth = create((set, get) => ({
       accountPrivate: {
         identityPrivateKey: unwrapped.identityPrivateKey,
         signingPrivateKey: unwrapped.signingPrivateKey,
+      },
+      accountPublic: {
+        identityPublicKey: data.user.identityPublicKey,
+        signingPublicKey: data.user.signingPublicKey,
+      },
+      devicePrivate: device.privateBundle,
+    });
+
+    applyPreferences(data.user);
+    set({ user: data.user, device: data.device, status: 'authed', error: null });
+    connectSocket(data.accessToken);
+    e2ee.replenishPreKeys();
+    return data;
+  },
+
+  /**
+   * Signs in with a passkey.
+   *
+   * Mirrors `login` in shape, with the assertion standing in for the password.
+   * The wrinkle is the identity: a passkey proves who you are but does not by
+   * itself hand over the key that decrypts history. Where the authenticator
+   * supports PRF, `authenticate` has already unwrapped it and there is nothing
+   * more to ask. Where it does not, this throws `NEEDS_PASSWORD` with the ticket
+   * attached, so the caller can ask once and come back through
+   * `passkeyLoginWithPassword` without a second sensor touch.
+   */
+  async passkeyLogin() {
+    const proof = await passkeys.authenticate();
+
+    if (proof.needsPassword) {
+      const err = new Error('Enter your password once to unlock your chats on this device');
+      err.code = 'NEEDS_PASSWORD';
+      err.proof = proof;
+      throw err;
+    }
+
+    return get().finishPasskeyLogin(proof, proof.identity);
+  },
+
+  /** The second attempt, once the password has been supplied. */
+  async passkeyLoginWithPassword(proof, password) {
+    const { raw } = await C.unwrapIdentity(proof.encryptedIdentity, password);
+    return get().finishPasskeyLogin(proof, raw);
+  },
+
+  /** Shared tail: mint device keys, take the session, persist the identity. */
+  async finishPasskeyLogin(proof, rawIdentity) {
+    if (!rawIdentity?.identityPrivateKey) {
+      throw new Error('Could not unlock your keys');
+    }
+
+    const device = await e2ee.buildDeviceKeys();
+    const data = await passkeys.complete({
+      ticket: proof.ticket,
+      keys: { device: device.publicBundle },
+      device: describeThisDevice(),
+    });
+
+    tokens.set(data);
+
+    await e2ee.persistAndUnlock({
+      userId: data.user._id,
+      accountPrivate: {
+        identityPrivateKey: rawIdentity.identityPrivateKey,
+        signingPrivateKey: rawIdentity.signingPrivateKey,
       },
       accountPublic: {
         identityPublicKey: data.user.identityPublicKey,
