@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import {
   CornerUpLeft, Pencil, Star, Clock, AlertCircle, RotateCw, Forward, Check, MessagesSquare,
@@ -66,6 +66,7 @@ export function MessageBubble({
   const pressTimer = useRef(null);
   const pressOrigin = useRef({ x: 0, y: 0 });
   const openedRef = useRef(false);
+  const movedRef = useRef(false);
   const [pressed, setPressed] = useState(false);
 
   const text = plain?.text || '';
@@ -119,6 +120,7 @@ export function MessageBubble({
     const point = e.touches?.[0] || e;
     pressOrigin.current = { x: point.clientX, y: point.clientY };
     openedRef.current = false;
+    movedRef.current = false;
     setPressed(true);
 
     pressTimer.current = setTimeout(
@@ -132,7 +134,24 @@ export function MessageBubble({
     const point = e.touches?.[0] || e;
     const dx = Math.abs(point.clientX - pressOrigin.current.x);
     const dy = Math.abs(point.clientY - pressOrigin.current.y);
-    if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) endPress();
+    if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+      movedRef.current = true;
+      endPress();
+    }
+  };
+
+  /* A cancelled pointer is not necessarily a cancelled press.
+     Chrome fires `pointercancel` whenever it claims the gesture for itself,
+     which includes the overscroll it starts when you hold a message at the very
+     bottom of a list that cannot scroll any further. Treating that as a release
+     is what made a long press down there do nothing but blip the bubble: the
+     press animation ran and the menu never opened, while the same press higher
+     up the list worked. A real scroll moves the finger, and `movePress` has
+     already cancelled by then — so with no movement the timer is left to run
+     and the press still counts. */
+  const cancelPress = () => {
+    if (movedRef.current) endPress();
+    else setPressed(false);
   };
 
   const endPress = () => {
@@ -140,6 +159,12 @@ export function MessageBubble({
     pressTimer.current = null;
     setPressed(false);
   };
+
+  /* Now that `pointercancel` no longer cancels the press, this is what stops a
+     pending timer from opening a menu for a message that has been deleted or
+     scrolled out of the list mid-press — the pointercancel that firing used to
+     depend on is exactly the one being ignored above. */
+  useEffect(() => () => clearTimeout(pressTimer.current), []);
 
   return (
     <motion.div
@@ -210,8 +235,11 @@ export function MessageBubble({
           onPointerDown={startPress}
           onPointerMove={movePress}
           onPointerUp={endPress}
-          onPointerCancel={endPress}
-          onPointerLeave={endPress}
+          onPointerCancel={cancelPress}
+          // Leaving the element only aborts a press for a mouse. Under touch the
+          // pointer is implicitly captured, so a `pointerleave` here means the
+          // finger drifted over an edge, not that the press was abandoned.
+          onPointerLeave={(e) => e.pointerType === 'mouse' && endPress()}
           onContextMenu={(e) => {
             // Suppress the native long-press menu and text selection that
             // would otherwise come with it.

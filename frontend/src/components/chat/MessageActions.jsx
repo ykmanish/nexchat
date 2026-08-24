@@ -25,12 +25,30 @@ import { ChoiceDialog } from '@/components/ui/Sheet';
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 const MENU_W = 216;
-const REACTIONS_H = 56;
 const PAD = 10;
 
 /**
- * Long-press / right-click menu. It anchors to the touch point, flips when it
- * would run off the bottom, and grows from the corner nearest the finger so the
+ * The band the user can actually see.
+ *
+ * `window.innerHeight` is the wrong number on a phone. It is the layout
+ * viewport, which on Android Chrome still counts the strip behind a collapsing
+ * URL bar, and it lags behind the on-screen keyboard. `visualViewport` is what
+ * is on the glass right now, and its offset matters under pinch-zoom, where a
+ * fixed element is positioned in layout coordinates but only part of it is
+ * visible.
+ */
+function visibleBand() {
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+  if (vv) {
+    return { left: vv.offsetLeft, width: vv.width, top: vv.offsetTop, height: vv.height };
+  }
+  return { left: 0, width: window.innerWidth, top: 0, height: window.innerHeight };
+}
+
+/**
+ * Long-press / right-click menu. It anchors to the touch point, opens towards
+ * whichever side of the finger has more room, keeps itself inside the visible
+ * viewport at any height, and grows from the corner nearest the finger so the
  * motion reads as coming *from* the message.
  */
 export function MessageActions({ conversation }) {
@@ -58,46 +76,110 @@ export function MessageActions({ conversation }) {
   /* `null` until the menu has been measured and placed. */
   const [pos, setPos] = useState(null);
   const menuRef = useRef(null);
+  const listRef = useRef(null);
 
   const message = contextMenu?.message;
   const isMine = contextMenu?.isMine;
 
-  /* Measure first, then place — one pass.
-     Positioning used to run off an *estimated* height (a fixed nine actions),
-     with a second effect correcting it afterwards. Two things went wrong with
-     that: the estimate is wrong on someone else's message, where the action
-     list is shorter, and the correction ran against whatever position was left
-     over from the previous open. Both showed up as the menu jumping around as
-     it appeared — worst below the halfway point of the screen, because that is
-     where the estimate decides to flip the menu upward.
+  /* Measure first, then place.
+     Positioning used to run off an *estimated* height, with a second effect
+     correcting it afterwards, which made the menu jump as it appeared. It is
+     measured instead, and rendered hidden until that has happened —
+     `visibility: hidden` still lays out, so it can be measured, and nothing is
+     painted at the wrong place.
 
-     The menu is rendered hidden until this has run. `visibility: hidden` still
-     lays out, so it can be measured, and nothing is painted at the wrong
-     place. */
+     Measuring alone was not enough, though. The menu is around 478px tall with
+     a full action list, and the old pass only ever *moved* it, never sized it.
+     Once the visible viewport was shorter than that — an on-screen keyboard
+     takes a 740px phone down to about 380, and landscape is worse — no offset
+     could fit it, so the clamp bottomed out at `PAD` for every touch point:
+     the menu jumped to the top of the screen, hundreds of pixels from the
+     finger, with the last few actions cut off below the fold and no way to
+     reach them. Pressing a message near the top happened to look correct,
+     because that is the one place where the top of the screen *is* next to
+     your finger. Everything lower looked like the menu had failed to open.
+
+     So the list is given a height budget and allowed to scroll inside it. Once
+     the menu is guaranteed to fit the visible band, the clamp can always
+     honour the anchor. */
   useLayoutEffect(() => {
     if (!contextMenu) {
       setPos(null);
-      return;
+      return undefined;
     }
-    if (!menuRef.current) return;
 
-    const height = menuRef.current.offsetHeight;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const place = () => {
+      if (!menuRef.current) return;
 
-    let left = contextMenu.x - MENU_W / 2;
-    left = Math.max(PAD, Math.min(left, vw - MENU_W - PAD));
+      const vp = visibleBand();
+      const minTop = vp.top + PAD;
+      const maxBottom = vp.top + vp.height - PAD;
+      const band = maxBottom - minTop;
 
-    // Flip above the finger when there is not room below it.
-    const flipUp = contextMenu.y + height + PAD > vh;
-    const wanted = flipUp ? contextMenu.y - height : contextMenu.y - REACTIONS_H;
-    const top = Math.min(Math.max(PAD, wanted), Math.max(PAD, vh - PAD - height));
+      /* The reaction strip is never scrolled or shrunk; only the list is.
+         Its height is derived by subtraction rather than measured directly so
+         that this stays idempotent: `scrollHeight` is the list's full content
+         height whatever cap is already on it, and the difference between the
+         panel and the list as rendered is always the strip plus its margin. */
+      const listRendered = listRef.current?.offsetHeight || 0;
+      const listWanted = listRef.current?.scrollHeight || 0;
+      const chrome = menuRef.current.offsetHeight - listRendered;
+      /* No lower bound on this. A floor is tempting — three rows and a
+         scrollbar is a poor menu — but any floor the band cannot afford puts
+         rows back off the screen, which is the whole defect being fixed here.
+         `height <= band` has to hold unconditionally, because it is what lets
+         the clamp below always honour the anchor. */
+      const listMax = Math.max(0, band - chrome);
+      const listH = Math.min(listWanted, listMax);
+      const height = chrome + listH;
 
-    const originX = contextMenu.x - left < MENU_W / 2 ? 'left' : 'right';
+      let left = contextMenu.x - MENU_W / 2;
+      left = Math.max(vp.left + PAD, Math.min(left, vp.left + vp.width - MENU_W - PAD));
 
-    // Tagged with the menu it was computed for, so a stale position from the
-    // previous open can never be treated as current.
-    setPos({ top, left, origin: (flipUp ? 'bottom ' : 'top ') + originX, for: contextMenu });
+      /* Open towards whichever side of the finger has more room, rather than
+         only flipping as a last resort. On a short viewport "fits below" is
+         false almost everywhere, and treating that as an exception put the
+         menu in the wrong place far more often than not. */
+      const roomBelow = maxBottom - contextMenu.y;
+      const roomAbove = contextMenu.y - minTop;
+      const flipUp = roomBelow < roomAbove;
+
+      // Opening down, the strip lands on the touch point and the list starts
+      // just below it; opening up, the whole menu sits above the finger.
+      const wanted = flipUp ? contextMenu.y - height : contextMenu.y - chrome;
+      const top = Math.min(Math.max(minTop, wanted), Math.max(minTop, maxBottom - height));
+
+      const originX = contextMenu.x - left < MENU_W / 2 ? 'left' : 'right';
+
+      // Tagged with the menu it was computed for, so a stale position from the
+      // previous open can never be treated as current.
+      setPos({
+        top,
+        left,
+        listMax,
+        scrolls: listWanted > listMax,
+        origin: (flipUp ? 'bottom ' : 'top ') + originX,
+        for: contextMenu,
+      });
+    };
+
+    place();
+
+    /* Re-place while the menu is open. The keyboard collapsing is the common
+       one: a long-press blurs the composer, the layout viewport grows back by
+       ~350px, and a position measured against the shrunken one is left
+       stranded. Orientation and the URL bar do the same thing more slowly. */
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', place);
+    vv?.addEventListener('scroll', place);
+    window.addEventListener('resize', place);
+    window.addEventListener('orientationchange', place);
+    return () => {
+      vv?.removeEventListener('resize', place);
+      vv?.removeEventListener('scroll', place);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('orientationchange', place);
+    };
   }, [contextMenu]);
 
   const placed = !!pos && pos.for === contextMenu;
@@ -311,9 +393,16 @@ export function MessageActions({ conversation }) {
               )}
 
               {/* action list */}
+              {/* Scrolls rather than overflowing the screen. Without a cap the
+                  panel is taller than a phone in landscape or with the keyboard
+                  up, and the actions past the fold are simply unreachable. */}
               <div
-                className="overflow-hidden rounded-xl bg-surface-raised py-1 shadow-pop"
-                style={{ width: MENU_W }}
+                ref={listRef}
+                className={cn(
+                  'rounded-xl bg-surface-raised py-1 shadow-pop',
+                  pos?.scrolls ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden'
+                )}
+                style={{ width: MENU_W, maxHeight: pos?.listMax }}
               >
                 {actions.map((action, i) => (
                   <motion.button
