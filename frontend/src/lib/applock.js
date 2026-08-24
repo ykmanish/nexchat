@@ -194,6 +194,23 @@ export const appLock = {
     await vault.setMeta(META_KEY, { ...cfg, lastActiveAt: Date.now() });
   },
 
+  /**
+   * Locks immediately, and makes it stick across a reload.
+   *
+   * Used by the panic gesture. Setting the screen up in memory is not enough on
+   * its own — `shouldLock` reads `lastActiveAt`, so a refresh would find a fresh
+   * timestamp and let straight back in. Backdating it past the window is what
+   * makes the lock survive.
+   */
+  async lockNow() {
+    const cfg = await vault.getMeta(META_KEY);
+    if (!cfg?.hash) return false;
+
+    const window = (cfg.autoLockSeconds ?? 300) * 1000;
+    await vault.setMeta(META_KEY, { ...cfg, lastActiveAt: Date.now() - window - 1000 });
+    return true;
+  },
+
   /** True when enough idle time has passed that we should ask for the PIN. */
   async shouldLock() {
     const cfg = await vault.getMeta(META_KEY);

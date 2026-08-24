@@ -9,6 +9,8 @@ import { UnlockScreen } from '@/components/auth/UnlockScreen';
 import { AppLockScreen } from '@/components/auth/AppLockScreen';
 import { appLock } from '@/lib/applock';
 import * as devicesync from '@/lib/devicesync';
+import * as flip from '@/lib/flipgesture';
+import { feedback } from '@/lib/sound';
 import { registerServiceWorker } from '@/lib/push';
 import { BottomNav } from './BottomNav';
 import { DesktopRail } from './DesktopRail';
@@ -76,6 +78,50 @@ export function AppShell({ children }) {
       useChat.getState().loadStories().catch(() => {});
     }
   }, [status, loaded, loadConversations]);
+
+  /**
+   * The panic gesture: turn the phone face-down and straight back up again.
+   *
+   * Armed only while signed in and unlocked. There is nothing to hide behind a
+   * lock screen that is already up, and re-locking an already-locked app would
+   * only be a way to lose an unsent reply.
+   *
+   * Locking goes through `lockNow` so it survives a reload, then flips this
+   * component's own state to put the screen up right away. Signing out goes
+   * through the store, so the session ends server-side too.
+   */
+  useEffect(() => {
+    if (status !== 'authed' || locked) return undefined;
+
+    let stop = () => {};
+    let cancelled = false;
+
+    (async () => {
+      const settings = await flip.config.get();
+      if (cancelled || !settings.enabled || !flip.isSupported()) return;
+
+      stop = flip.watch(async () => {
+        // The screen is face-down at the moment the gesture completes, so the
+        // only confirmation that can land is one you feel.
+        if (settings.action === 'lock' && (await appLock.lockNow())) {
+          feedback('close');
+          setLocked(true);
+          return;
+        }
+
+        // Either they asked to sign out, or they asked to lock and there is no
+        // PIN to lock behind — in which case signing out is the honest reading
+        // of "hide this now", and the settings copy says so.
+        feedback('error');
+        await useAuth.getState().logout();
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [status, locked]);
 
   /**
    * Pull in what the account's other devices have decrypted, then contribute

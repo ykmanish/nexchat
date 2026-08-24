@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock } from 'lucide-react';
+import {
+  Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock, FlipVertical,
+} from 'lucide-react';
 import { SettingsShell, SettingsGroup, SettingsRow, Divider } from '@/components/layout/SettingsShell';
 import { Switch, Segmented } from '@/components/ui/Field';
 import { ListButton } from '@/components/ui/Button';
@@ -14,6 +16,7 @@ import { feedback } from '@/lib/sound';
 import { AppLockSheet } from '@/components/modals/AppLockSheet';
 import { appLock, AUTO_LOCK_OPTIONS } from '@/lib/applock';
 import * as passkeys from '@/lib/passkeys';
+import * as flip from '@/lib/flipgesture';
 
 /** "On · After 5 minutes · fingerprint and passkey" */
 function lockSummary({ enabled, autoLockSeconds, kinds }) {
@@ -48,6 +51,7 @@ export default function PrivacyPage() {
   // null while unknown, so the row does not flash "None yet" at people who
   // do have passkeys.
   const [passkeyCount, setPasskeyCount] = useState(null);
+  const [flipState, setFlipState] = useState(null);
   const openSheet = useUI((s) => s.openSheet);
 
   const refreshLock = () =>
@@ -71,6 +75,7 @@ export default function PrivacyPage() {
       .list()
       .then((list) => setPasskeyCount(list.length))
       .catch(() => setPasskeyCount(0));
+    flip.config.get().then(setFlipState);
   }, []);
 
   const rows = [
@@ -136,7 +141,7 @@ export default function PrivacyPage() {
 
       <SettingsGroup
         title="Security"
-        footer="The PIN lives on this device only, and so does any fingerprint or passkey you add to it. None of them is your account password."
+        footer="The PIN lives on this device only, and so does any fingerprint or passkey you add to it. None of them is your account password. Flip to hide only works while Chax is on screen — a browser stops reporting motion to a page it has backgrounded."
       >
         <ListButton
           icon={Lock}
@@ -146,6 +151,24 @@ export default function PrivacyPage() {
           onClick={() => {
             feedback('open');
             setShowLock(true);
+          }}
+        />
+        <Divider />
+        <ListButton
+          icon={FlipVertical}
+          label="Flip to hide"
+          sublabel={
+            !flip.isSupported()
+              ? flip.unsupportedReason() || 'Not available on this device'
+              : flipState?.enabled
+                ? 'On · ' +
+                  (flipState.action === 'logout' ? 'signs out' : 'locks Chax')
+                : 'Off'
+          }
+          chevron
+          onClick={() => {
+            feedback('open');
+            openSheet('flipGesture');
           }}
         />
         <Divider />

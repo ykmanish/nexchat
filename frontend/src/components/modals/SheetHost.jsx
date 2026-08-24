@@ -12,6 +12,7 @@ import { GroupMembersSheet } from './GroupMembersSheet';
 import { ModerationSheet } from './ModerationSheet';
 import { CallLinkSheet } from './CallLinkSheet';
 import { PasskeySheet } from './PasskeySheet';
+import { FlipGestureSheet } from './FlipGestureSheet';
 
 /** One place that decides which sheet is on screen. */
 export function SheetHost() {
@@ -50,6 +51,7 @@ export function SheetHost() {
       <ModerationSheet open={type === 'moderation'} onClose={close} {...props} />
       <CallLinkSheet open={type === 'callLinks'} onClose={close} />
       <PasskeySheet open={type === 'passkeys'} onClose={close} />
+      <FlipGestureSheet open={type === 'flipGesture'} onClose={close} />
 
       <ForwardSheet
         open={!!forwarding}
