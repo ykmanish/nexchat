@@ -246,8 +246,78 @@ both are consequences of the protocol rather than the format.
 
 ---
 
+## Two-sided reconciliation
+
+Implemented in `backend/scripts/reconcile-exports.mjs`:
+
+```bash
+npm run reconcile -- alice.chaxfx bob.chaxfx        # or add --json
+```
+
+This is the answer to the research question above, as far as one exists. Both
+parties export; the tool verifies each file independently, refuses to proceed if
+either fails, then compares them record by record:
+
+| Category | Meaning |
+|---|---|
+| **Corroborated** | Same message id, same content digest, independently signed by both parties. Neither could have produced this agreement alone. |
+| **Contradicted** | Same id, different content. One side altered its record *before* signing — a valid file with dishonest content. |
+| **Only in A / only in B** | One-sided. Innocent causes exist: local deletion, non-delivery, a device that joined later. |
+| **Received but unmatched** | Claimed as received by one side, absent from the other. This is the shape a fabrication takes — and equally the shape of an ordinary deletion, so it is reported unresolved, never as an accusation. |
+
+Two guards keep the claim honest. If both exports name the **same exporter**, the
+tool says agreement establishes nothing about attribution and exits non-zero: one
+party controlling both sides can manufacture any agreement it likes. And if
+corroborated records carry the **same direction** on both sides, the files are
+probably not opposite ends of one conversation, which is flagged separately.
+
+What this buys: *corroborated by both parties* is materially stronger than a
+single export and still weaker than a sender signature. It shows both sides hold
+the same record, not that a particular person composed it. Deniability is
+untouched — nothing is signed here that was not already signed.
+
+## Deletion receipts
+
+`POST /api/messages/:id/deletion-receipts`, with the ledger at
+`GET /api/messages/deletion-chain/:conversationId/:deviceId`.
+
+"Delete for everyone" is normally an unverifiable promise. Each recipient device
+now signs a statement — message id, conversation, device, time, previous receipt
+hash — with the same key it signs exports with. The server verifies that
+signature against the public key it *already holds* for that device and refuses
+anything that does not check out, so a stored receipt is always one a device
+really signed. The server cannot forge one, having no private key; the device
+cannot later deny one, having signed it.
+
+Receipts are hash-chained per device per conversation, so a receipt quietly
+dropped afterwards leaves a visible gap. `listChain` replays the chain rather
+than trusting stored order, and reports the index where it breaks.
+
+Scope, stated in the UI as well as here: a receipt attests that **one device's
+stored copy is gone**. It says nothing about a screenshot, a photograph of a
+screen, or an export taken before the deletion — which is the most any software
+can honestly claim.
+
+## What the server knows
+
+`GET /api/transparency/me`, surfaced at **Settings -> What the server knows**.
+
+Live queries enumerating what is legible server-side and what is not, with a
+reason for every entry. Writing it surfaced two things worth recording as
+findings rather than hiding:
+
+- **Mention user ids are cleartext.** Routing a notification requires knowing who
+  was named, so the ids are stored in the clear. The name as written stays inside
+  the encrypted body; who was named does not.
+- **Drafts are stored in plain text.** Unsent drafts sync between your own devices
+  through `participants.draft` and are never encrypted — so an unsent draft is
+  *more* exposed than a sent message. This is an inconsistency in the current
+  design rather than a considered trade-off, and it is the clearest argument for
+  having a page like this: nothing had enumerated it before, so nobody noticed.
+
 ## Future work
 
+- **Encrypt drafts.** The transparency page found this; it should be fixed.
 - **Sender signatures as an opt-in mode.** A per-conversation "attributable mode"
   where both parties consent to sign their messages, trading deniability for
   attribution. The policy question is more interesting than the code.
@@ -272,7 +342,11 @@ both are consequences of the protocol rather than the format.
 | `backend/src/services/attestation.js` | Attestation authority key and signing |
 | `backend/src/controllers/forensics.controller.js` | `attest`, `authority`, public lookup |
 | `backend/scripts/verify-export.mjs` | Standalone verifier — no dependencies |
+| `backend/scripts/reconcile-exports.mjs` | Two-sided reconciliation — no dependencies |
+| `backend/src/controllers/receipt.controller.js` | Deletion receipts: verify, store, chain |
+| `backend/src/controllers/transparency.controller.js` | The what-the-server-knows report |
 | `backend/scripts/forensics.test.mjs` | 17 tests: conformance, tamper detection, end-to-end |
+| `backend/scripts/reconcile.test.mjs` | 10 tests: corroboration, contradiction, fabrication |
 
 Run `npm run test:forensics` in `backend/`.
 

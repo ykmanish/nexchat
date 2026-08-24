@@ -402,3 +402,12 @@ export const attestSchema = z.object({
   merkleRoot: z.string().min(16).max(128),
   recordCount: z.number().int().min(0).max(1_000_000).optional(),
 });
+
+/* ───────────────────────── deletion receipts ───────────────────────── */
+
+export const deletionReceiptSchema = z.object({
+  deletedAt: z.string().datetime(),
+  prevHash: z.string().max(128).nullable().optional(),
+  signature: z.string().min(16).max(512),
+  publicKey: z.string().min(16).max(512),
+});

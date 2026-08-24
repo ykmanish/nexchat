@@ -17,6 +17,7 @@ import {
   Volume2,
   ShieldCheck,
   DatabaseBackup,
+  ScanEye,
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { useUI, toast } from '@/store/ui';
@@ -61,6 +62,12 @@ export default function SettingsPage() {
           label: 'Chat backup',
           sublabel: 'Keep a copy you can read',
           href: '/settings/backup',
+        },
+        {
+          icon: ScanEye,
+          label: 'What the server knows',
+          sublabel: 'Your metadata footprint, live',
+          href: '/settings/transparency',
         },
       ],
     },

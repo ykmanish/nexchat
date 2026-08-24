@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { DeletionReceipts } from '@/components/chat/DeletionReceipts';
 import { useTheme } from 'next-themes';
 import { useMemo, useState } from 'react';
 import { CheckCheck, Check, Clock, Eye } from 'lucide-react';
@@ -147,6 +148,22 @@ const stamp = (d) => (d ? format(new Date(d), "d MMM 'at' HH:mm") : null);
 export function MessageInfoSheet({ open, onClose, message, conversation }) {
   const plain = useChat((s) => s.plain);
   if (!message) return null;
+
+  /* A deleted message has no receipts to show and no body to describe, so the
+     panel becomes the deletion ledger instead. */
+  if (message.deletedForEveryone) {
+    return (
+      <Sheet
+        open={open}
+        onClose={onClose}
+        title="Deleted message"
+        subtitle="Who has confirmed deleting their copy"
+        size="sm"
+      >
+        <DeletionReceipts messageId={message._id} />
+      </Sheet>
+    );
+  }
 
   const isDirect = conversation?.type === 'direct';
   const receipts = message.receipts || [];

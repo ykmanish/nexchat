@@ -553,6 +553,234 @@ await check('a backup can be deleted', async () => {
   assert(gone.body.backup === null, 'still there');
 });
 
+/* ── transparency dashboard ── */
+
+await check('the transparency report is scoped to the caller and honest', async () => {
+  const res = await api('GET', '/transparency/me', null, alice.token);
+  assert(res.status === 200, JSON.stringify(res.body));
+
+  const { visible, invisible } = res.body;
+  assert(visible.identity.email === alice.email, 'wrong account reported');
+  assert(Array.isArray(invisible) && invisible.length > 5, 'the cannot-see list is thin');
+
+  // The two uncomfortable truths must be in the *visible* half, not omitted.
+  assert(visible.mentions, 'mention visibility was left out');
+  assert(visible.drafts, 'draft visibility was left out');
+  assert(
+    /not encrypted|plain text/i.test(visible.drafts.why),
+    'the draft entry does not say drafts are readable'
+  );
+  assert(/leak/i.test(visible.mentions.why), 'the mention entry does not admit it is a leak');
+
+  assert(
+    invisible.some((i) => /message text/i.test(i.item)),
+    'message text is not listed as invisible'
+  );
+  for (const item of invisible) {
+    assert(item.reason && item.reason.length > 20, item.item + ' has no reason given');
+  }
+});
+
+await check('the report counts real activity', async () => {
+  const res = await api('GET', '/transparency/me', null, alice.token);
+  const v = res.body.visible;
+  assert(v.socialGraph.conversations > 0, 'no conversations counted');
+  assert(v.messages.sentByYou > 0, 'no sent messages counted');
+  assert(v.devices.count >= 1, 'no devices counted');
+  assert(
+    v.socialGraph.perConversation.length === v.socialGraph.conversations,
+    'per-conversation breakdown does not match the count'
+  );
+});
+
+await check('the transparency report needs a session', async () => {
+  const res = await api('GET', '/transparency/me');
+  assert(res.status === 401, 'anonymous access allowed, got ' + res.status);
+});
+
+/* ── deletion receipts ── */
+
+const { Device: DeviceModel } = await import('../src/models/index.js');
+const { canonical: canon } = await import('../src/services/attestation.js');
+
+/** Gives a device a real signing key and returns the pair. */
+async function armDevice(deviceId) {
+  const kp = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify']
+  );
+  const pub = Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64');
+  await DeviceModel.updateOne({ deviceId }, { signingPublicKey: pub });
+  return { kp, pub };
+}
+
+const signReceipt = async (kp, statement) =>
+  Buffer.from(
+    await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      kp.privateKey,
+      Buffer.from(canon(statement), 'utf8')
+    )
+  ).toString('base64');
+
+let deletedId;
+let bobKeys;
+
+await check('a receipt is refused for a message that was not deleted', async () => {
+  const msg = await api(
+    'POST',
+    '/messages',
+    { conversationId: group._id, clientId: 'cid-del-1', ...envelope('delete me later') },
+    alice.token
+  );
+  assert(msg.status === 201, JSON.stringify(msg.body));
+  deletedId = msg.body.message._id;
+
+  bobKeys = await armDevice(bob.deviceId);
+
+  const res = await api(
+    'POST',
+    '/messages/' + deletedId + '/deletion-receipts',
+    {
+      deletedAt: new Date().toISOString(),
+      signature: Buffer.alloc(64).toString('base64'),
+      publicKey: bobKeys.pub,
+    },
+    bob.token
+  );
+  assert(
+    res.status === 400 && res.body.code === 'NOT_DELETED',
+    'expected NOT_DELETED, got ' + res.status + ' ' + res.body.code
+  );
+});
+
+await check('a receipt signed with an unregistered key is refused', async () => {
+  const del = await api('DELETE', '/messages/' + deletedId + '?scope=everyone', null, alice.token);
+  assert(del.status === 200, JSON.stringify(del.body));
+
+  const res = await api(
+    'POST',
+    '/messages/' + deletedId + '/deletion-receipts',
+    {
+      deletedAt: new Date().toISOString(),
+      signature: Buffer.alloc(64).toString('base64'),
+      publicKey: Buffer.alloc(65, 3).toString('base64'),
+    },
+    bob.token
+  );
+  assert(
+    res.status === 400 && res.body.code === 'KEY_MISMATCH',
+    'expected KEY_MISMATCH, got ' + res.status + ' ' + res.body.code
+  );
+});
+
+await check('a wrong signature under the right key is refused', async () => {
+  const res = await api(
+    'POST',
+    '/messages/' + deletedId + '/deletion-receipts',
+    {
+      deletedAt: new Date().toISOString(),
+      prevHash: null,
+      signature: Buffer.alloc(64, 7).toString('base64'),
+      publicKey: bobKeys.pub,
+    },
+    bob.token
+  );
+  assert(
+    res.status === 400 && res.body.code === 'BAD_SIGNATURE',
+    'expected BAD_SIGNATURE, got ' + res.status + ' ' + res.body.code
+  );
+});
+
+await check('a genuinely signed receipt is accepted, and a retry is idempotent', async () => {
+  const tip = await api('GET', '/messages/deletion-chain/' + group._id + '/tip', null, bob.token);
+  assert(tip.status === 200, JSON.stringify(tip.body));
+
+  const statement = {
+    messageId: String(deletedId),
+    conversationId: String(group._id),
+    deviceId: bob.deviceId,
+    deletedAt: new Date().toISOString(),
+    prevHash: tip.body.tip ?? null,
+  };
+  const signature = await signReceipt(bobKeys.kp, statement);
+
+  const body = {
+    deletedAt: statement.deletedAt,
+    prevHash: statement.prevHash,
+    signature,
+    publicKey: bobKeys.pub,
+  };
+
+  const res = await api('POST', '/messages/' + deletedId + '/deletion-receipts', body, bob.token);
+  assert(res.status === 201, JSON.stringify(res.body));
+  assert(res.body.receipt.hash, 'no chain hash returned');
+
+  const again = await api('POST', '/messages/' + deletedId + '/deletion-receipts', body, bob.token);
+  assert(again.body.duplicate === true, 'a retry was not idempotent');
+});
+
+await check('the status lists who confirmed and who still owes one', async () => {
+  const res = await api('GET', '/messages/' + deletedId + '/deletion-receipts', null, alice.token);
+  assert(res.status === 200, JSON.stringify(res.body));
+  assert(res.body.receipts.length === 1, 'expected 1 receipt, got ' + res.body.receipts.length);
+  assert(Array.isArray(res.body.outstanding), 'no outstanding list');
+  assert(
+    !res.body.outstanding.some((d) => d.deviceId === alice.deviceId),
+    'the deleter own device was listed as outstanding'
+  );
+});
+
+await check('the chain replays intact', async () => {
+  const res = await api(
+    'GET',
+    '/messages/deletion-chain/' + group._id + '/' + bob.deviceId,
+    null,
+    alice.token
+  );
+  assert(res.status === 200, JSON.stringify(res.body));
+  assert(res.body.chainIntact === true, 'reported a gap it should not have');
+  assert(res.body.count === 1, 'expected 1 receipt, got ' + res.body.count);
+  assert(res.body.tip, 'no tip reported');
+});
+
+await check('a receipt naming the wrong predecessor is refused', async () => {
+  const msg = await api(
+    'POST',
+    '/messages',
+    { conversationId: group._id, clientId: 'cid-del-2', ...envelope('second deletion') },
+    alice.token
+  );
+  assert(msg.status === 201, JSON.stringify(msg.body));
+  await api('DELETE', '/messages/' + msg.body.message._id + '?scope=everyone', null, alice.token);
+
+  // Claims to follow nothing, but this device already has a chain tip.
+  const statement = {
+    messageId: String(msg.body.message._id),
+    conversationId: String(group._id),
+    deviceId: bob.deviceId,
+    deletedAt: new Date().toISOString(),
+    prevHash: null,
+  };
+
+  const res = await api(
+    'POST',
+    '/messages/' + msg.body.message._id + '/deletion-receipts',
+    {
+      deletedAt: statement.deletedAt,
+      prevHash: null,
+      signature: await signReceipt(bobKeys.kp, statement),
+      publicKey: bobKeys.pub,
+    },
+    bob.token
+  );
+  assert(
+    res.status === 409 && res.body.code === 'CHAIN_GAP',
+    'expected CHAIN_GAP, got ' + res.status + ' ' + res.body.code
+  );
+});
+
 /* ── forensic attestation ── */
 
 await check('the attestation authority key is public', async () => {

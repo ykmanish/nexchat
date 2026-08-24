@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as msg from '../controllers/message.controller.js';
+import * as receipts from '../controllers/receipt.controller.js';
 import { authenticate, requireVerified } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as v from '../validators/index.js';
@@ -19,6 +20,14 @@ router.post('/delete-many', validate(v.deleteManySchema), msg.deleteMany);
 
 router.get('/:id', msg.getMessage);
 router.get('/:id/thread', msg.listThread);
+
+/* Deletion receipts. The chain tip has to be readable before a device can sign
+   its next receipt, so that route sits under the conversation rather than the
+   message. */
+router.get('/deletion-chain/:conversationId/tip', receipts.chainTip);
+router.get('/deletion-chain/:conversationId/:deviceId', receipts.listChain);
+router.get('/:id/deletion-receipts', receipts.listForMessage);
+router.post('/:id/deletion-receipts', validate(v.deletionReceiptSchema), receipts.submitReceipt);
 router.patch('/:id', validate(v.editMessageSchema), msg.editMessage);
 router.delete('/:id', msg.deleteMessage);
 router.post('/:id/reactions', validate(v.reactionSchema), msg.toggleReaction);

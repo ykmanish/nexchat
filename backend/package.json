@@ -11,8 +11,9 @@
     "dev:mem": "cross-env USE_MEMORY_DB=true nodemon src/server.js",
     "smoke": "node scripts/smoke-test.mjs",
     "test:features": "node scripts/feature-test.mjs",
-    "test:forensics": "node scripts/forensics.test.mjs",
-    "verify-export": "node scripts/verify-export.mjs"
+    "test:forensics": "node scripts/forensics.test.mjs && node scripts/reconcile.test.mjs",
+    "verify-export": "node scripts/verify-export.mjs",
+    "reconcile": "node scripts/reconcile-exports.mjs"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

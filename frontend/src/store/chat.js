@@ -30,6 +30,7 @@ export const useChat = create((set, get) => ({
   loadingMessages: {},
   typing: {}, // conversationId -> { userId: name }
   threads: {}, // rootMessageId -> { root, replies, following }
+  deletionReceipts: {}, // messageId -> confirmations seen this session
   threadLoading: {},
   presence: {}, // userId -> boolean
   stories: [],

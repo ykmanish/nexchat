@@ -157,6 +157,17 @@ function SocketBridge() {
         }
       },
 
+      /* Someone's device confirmed a deletion we ordered. Only the count is
+         tracked here; the detail is fetched when the info sheet is opened. */
+      'message:deletion-confirmed': ({ conversationId, messageId }) => {
+        useChat.setState((s) => ({
+          deletionReceipts: {
+            ...s.deletionReceipts,
+            [messageId]: (s.deletionReceipts?.[messageId] || 0) + 1,
+          },
+        }));
+      },
+
       'message:edited': ({ conversationId, message }) => {
         chat().applyMessagePatch(conversationId, message._id, message);
         chat().decrypt(message);
@@ -164,6 +175,13 @@ function SocketBridge() {
 
       'message:deleted': ({ conversationId, messageId, scope }) => {
         if (scope === 'everyone') {
+          /* Sign a receipt once the local copy is actually gone. Fire and
+             forget: the deletion has already happened, so a failed receipt is a
+             visible gap in the chain rather than a reason to block anything. */
+          import('@/lib/receipts').then((m) =>
+            m.confirmDeletion({ messageId, conversationId })
+          );
+
           chat().applyMessagePatch(conversationId, messageId, {
             deletedForEveryone: true,
             attachments: [],
