@@ -4,16 +4,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search,
-  X,
-  MoreVertical,
   Archive,
   ArrowLeft,
   MessageSquarePlus,
-  Users,
-  Star,
   MonitorSmartphone,
+  MoreVertical,
+  Search,
   Settings,
+  Siren,
+  Star,
+  Users,
+  X,
 } from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
@@ -245,6 +246,16 @@ export function ChatListPane() {
             label: 'Linked devices',
             icon: MonitorSmartphone,
             onClick: () => router.push('/settings/devices'),
+          },
+          { divider: true },
+          /* Below a divider and styled as destructive so it is never a
+             mis-tap, but at top level rather than buried in Settings — a
+             safety feature two screens deep is not a safety feature. */
+          {
+            label: 'Emergency share',
+            icon: Siren,
+            danger: true,
+            onClick: () => openSheet('sos'),
           },
           { divider: true },
           { label: 'Settings', icon: Settings, onClick: () => router.push('/settings') },
