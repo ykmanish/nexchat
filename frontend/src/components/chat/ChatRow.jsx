@@ -251,9 +251,13 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
             </span>
 
             <div className="flex shrink-0 items-center gap-1.5 pl-1">
-              {conversation.settings?.disappearingSeconds > 0 && (
-                <Clock size={13} className="text-ink-faint" />
-              )}
+              {/* No disappearing-messages clock here. ReceiptTick draws that same
+                  glyph for "still sending" on message bubbles, so one icon meant
+                  two unrelated things across the chat UI — and a bare clock next
+                  to a timestamp reads as a message stuck in limbo whatever it was
+                  meant to say. The chat header already states "Disappearing
+                  messages are on" in words, which is clearer and is where the
+                  other apps put it too. */}
               {conversation.muted && <BellOff size={14} className="text-ink-faint" />}
               {conversation.pinned && <Pin size={14} className="text-ink-faint" />}
               {/* Shown even when the chat is muted and the unread pill has gone
