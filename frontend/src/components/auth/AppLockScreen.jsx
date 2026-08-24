@@ -2,17 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Delete, LogOut } from 'lucide-react';
+import { Delete, Fingerprint, KeyRound, Loader2, LogOut } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { appLock } from '@/lib/applock';
 import { useAuth } from '@/store/auth';
 import { cn } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
+/* 'bio' is the bottom-left slot: the fingerprint key when one is registered,
+   an empty spacer when it is not — the place a phone puts it either way. */
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'bio', '0', 'del'];
 const MAX_PIN = 8;
 
-/** Full-screen PIN gate. Nothing behind it is rendered while it is up. */
+/**
+ * Full-screen PIN gate. Nothing behind it is rendered while it is up.
+ *
+ * A registered fingerprint or passkey opens the same gate; the keypad is always
+ * there underneath, because a sensor that has been reset must not be a lockout.
+ */
 export function AppLockScreen({ onUnlocked }) {
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
@@ -20,11 +27,28 @@ export function AppLockScreen({ onUnlocked }) {
   const [pin, setPin] = useState('');
   const [shake, setShake] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  const [kinds, setKinds] = useState([]); // what is registered on this device
+  const [prompting, setPrompting] = useState(null); // the kind mid-prompt
+  const [hint, setHint] = useState(null);
   const checking = useRef(false);
+  const autoTried = useRef(false);
+
+  const hasBiometric = kinds.includes('biometric');
+  const hasPasskey = kinds.includes('passkey');
 
   useEffect(() => {
     appLock.failedAttempts().then(setAttempts);
+    appLock.credentials().then((list) => setKinds(list.map((c) => c.kind)));
   }, []);
+
+  /* Reach for the sensor as soon as we know there is one, the way a phone
+     does. Browsers that want a click first will reject this immediately and
+     the fingerprint key is right there. */
+  useEffect(() => {
+    if (autoTried.current || !hasBiometric) return;
+    autoTried.current = true;
+    unlockWith('biometric', { auto: true });
+  }, [hasBiometric]);
 
   /* Physical keyboards should work too. */
   useEffect(() => {
@@ -36,6 +60,30 @@ export function AppLockScreen({ onUnlocked }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  async function unlockWith(kind, { auto = false } = {}) {
+    if (checking.current) return;
+    checking.current = true;
+    setPrompting(kind);
+    setHint(null);
+
+    try {
+      await appLock.unlockWith(kind);
+      feedback('success');
+      await appLock.markBackgrounded();
+      onUnlocked();
+    } catch (err) {
+      // A silent auto-attempt that the browser blocked for want of a gesture is
+      // not something to shout about; only say so when it was asked for.
+      if (!auto) {
+        feedback('error');
+        setHint(err.message);
+      }
+    } finally {
+      setPrompting(null);
+      checking.current = false;
+    }
+  }
 
   async function submit(value) {
     if (checking.current) return;
@@ -57,6 +105,10 @@ export function AppLockScreen({ onUnlocked }) {
   }
 
   function press(key) {
+    // Digits typed while an authenticator prompt is in flight would be eaten by
+    // the guard in submit(), leaving filled dots and no unlock. Ignore them.
+    if (prompting) return;
+
     if (key === 'del') {
       feedback('tap');
       setPin((p) => p.slice(0, -1));
@@ -65,6 +117,7 @@ export function AppLockScreen({ onUnlocked }) {
     if (!key) return;
 
     feedback('tap');
+    setHint(null);
     setPin((p) => {
       const next = (p + key).slice(0, MAX_PIN);
       // Four digits is the common case — try it without waiting for Enter.
@@ -87,10 +140,16 @@ export function AppLockScreen({ onUnlocked }) {
         <h1 className="mt-3.5 text-center font-display text-[18px] tracking-tight">
           {user ? user.name.split(' ')[0] + ', enter your PIN' : 'Enter your PIN'}
         </h1>
-        <p className="mt-1 text-center text-[12.5px] text-ink-muted">
-          {attempts > 0
-            ? attempts + (attempts === 1 ? ' failed attempt' : ' failed attempts')
-            : 'Chax is locked'}
+        <p
+          className={cn(
+            'mt-1 text-center text-[12.5px]',
+            hint ? 'font-medium text-danger' : 'text-ink-muted'
+          )}
+        >
+          {hint ||
+            (attempts > 0
+              ? attempts + (attempts === 1 ? ' failed attempt' : ' failed attempts')
+              : 'Chax is locked')}
         </p>
 
         {/* dots */}
@@ -115,37 +174,65 @@ export function AppLockScreen({ onUnlocked }) {
           {/* Keyed by index throughout: the blank spacer sits at index 9, so a
               `key={i}` spacer and a `key={key}` digit both stringify to "9"
               and collide. */}
-          {KEYS.map((key, i) =>
-            key === '' ? (
-              <span key={'key-' + i} />
-            ) : (
+          {KEYS.map((key, i) => {
+            const bio = key === 'bio';
+            const del = key === 'del';
+            if (bio && !hasBiometric) return <span key={'key-' + i} />;
+
+            return (
               <motion.button
                 key={'key-' + i}
                 type="button"
                 whileTap={{ scale: 0.92 }}
-                onClick={() => press(key)}
-                aria-label={key === 'del' ? 'Delete' : key}
+                onClick={() => (bio ? unlockWith('biometric') : press(key))}
+                aria-label={bio ? 'Unlock with fingerprint' : del ? 'Delete' : key}
                 className={cn(
                   'grid h-[52px] place-items-center rounded-xl text-[21px] font-medium transition-colors',
-                  key === 'del'
-                    ? 'text-ink-muted hover:bg-surface-2'
-                    : 'bg-surface-2 hover:bg-surface-3'
+                  bio || del ? 'hover:bg-surface-2' : 'bg-surface-2 hover:bg-surface-3',
+                  bio ? 'text-brand-strong' : del && 'text-ink-muted'
                 )}
               >
-                {key === 'del' ? <Delete size={20} /> : key}
+                {bio ? (
+                  prompting === 'biometric' ? (
+                    <Loader2 size={21} className="animate-spin" />
+                  ) : (
+                    <Fingerprint size={23} />
+                  )
+                ) : del ? (
+                  <Delete size={20} />
+                ) : (
+                  key
+                )}
               </motion.button>
-            )
-          )}
+            );
+          })}
         </div>
 
-        <button
-          type="button"
-          onClick={() => logout()}
-          className="mt-5 inline-flex items-center gap-1.5 text-[13px] text-ink-muted transition-colors hover:text-danger"
-        >
-          <LogOut size={14} />
-          Sign out instead
-        </button>
+        <div className="mt-5 flex items-center justify-center gap-4">
+          {hasPasskey && (
+            <button
+              type="button"
+              onClick={() => unlockWith('passkey')}
+              className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted transition-colors hover:text-brand-strong"
+            >
+              {prompting === 'passkey' ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <KeyRound size={14} />
+              )}
+              Use a passkey
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted transition-colors hover:text-danger"
+          >
+            <LogOut size={14} />
+            Sign out instead
+          </button>
+        </div>
       </div>
     </div>
   );

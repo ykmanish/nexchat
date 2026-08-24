@@ -14,6 +14,18 @@ import { feedback } from '@/lib/sound';
 import { AppLockSheet } from '@/components/modals/AppLockSheet';
 import { appLock, AUTO_LOCK_OPTIONS } from '@/lib/applock';
 
+/** "On · After 5 minutes · fingerprint and passkey" */
+function lockSummary({ enabled, autoLockSeconds, kinds }) {
+  if (!enabled) return 'Off';
+  const timing =
+    AUTO_LOCK_OPTIONS.find((o) => o.value === autoLockSeconds)?.label || 'After 5 minutes';
+  const extras = [
+    kinds.includes('biometric') && 'fingerprint',
+    kinds.includes('passkey') && 'passkey',
+  ].filter(Boolean);
+  return ['On', timing, extras.join(' and ')].filter(Boolean).join(' · ');
+}
+
 const VISIBILITY = [
   { value: 'everyone', label: 'Everyone' },
   { value: 'contacts', label: 'Contacts' },
@@ -27,11 +39,19 @@ export default function PrivacyPage() {
   const [blocked, setBlocked] = useState([]);
   const [showBlocked, setShowBlocked] = useState(false);
   const [showLock, setShowLock] = useState(false);
-  const [lockState, setLockState] = useState({ enabled: false, autoLockSeconds: 300 });
+  const [lockState, setLockState] = useState({
+    enabled: false,
+    autoLockSeconds: 300,
+    kinds: [],
+  });
 
   const refreshLock = () =>
     appLock.config().then((cfg) =>
-      setLockState({ enabled: !!cfg?.hash, autoLockSeconds: cfg?.autoLockSeconds ?? 300 })
+      setLockState({
+        enabled: !!cfg?.hash,
+        autoLockSeconds: cfg?.autoLockSeconds ?? 300,
+        kinds: (cfg?.credentials || []).map((c) => c.kind),
+      })
     );
 
   const privacy = user?.privacy || {};
@@ -107,18 +127,12 @@ export default function PrivacyPage() {
 
       <SettingsGroup
         title="Security"
-        footer="The PIN lives on this device only. It is not your account password."
+        footer="The PIN lives on this device only, and so does any fingerprint or passkey you add to it. None of them is your account password."
       >
         <ListButton
           icon={Lock}
           label="App lock"
-          sublabel={
-            lockState.enabled
-              ? 'On · ' +
-                (AUTO_LOCK_OPTIONS.find((o) => o.value === lockState.autoLockSeconds)?.label ||
-                  'After 5 minutes')
-              : 'Off'
-          }
+          sublabel={lockSummary(lockState)}
           chevron
           onClick={() => {
             feedback('open');

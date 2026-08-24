@@ -1,6 +1,7 @@
 'use client';
 
 import { vault } from './vault';
+import * as webauthn from './webauthn';
 
 /**
  * App lock — a local PIN in front of the app.
@@ -9,6 +10,11 @@ import { vault } from './vault';
  * browser and the server knows nothing about it. It stops someone who picks up
  * an unlocked laptop, which is exactly what it claims to do. It does *not*
  * protect the message cache from someone with access to the disk.
+ *
+ * A fingerprint (platform authenticator) or a passkey can be registered as a
+ * faster way past the same gate — see ./webauthn. The PIN is still the thing
+ * being set up, and it always keeps working, so a lost or reset authenticator
+ * never locks anyone out of their own device.
  */
 
 const META_KEY = 'appLock';
@@ -71,11 +77,15 @@ export const appLock = {
   async enable(pin, { autoLockSeconds = 300 } = {}) {
     if (!/^\d{4,8}$/.test(pin)) throw new Error('Choose a PIN of 4 to 8 digits');
 
+    // Changing the PIN goes through here too, so keep whatever authenticators
+    // are already registered instead of silently dropping them.
+    const existing = await vault.getMeta(META_KEY);
     const salt = crypto.getRandomValues(new Uint8Array(16));
     await vault.setMeta(META_KEY, {
       hash: await derive(pin, salt),
       salt: toB64(salt),
       autoLockSeconds,
+      credentials: existing?.credentials || [],
       failedAttempts: 0,
       lockedAt: Date.now(),
     });
@@ -103,6 +113,73 @@ export const appLock = {
       failedAttempts: ok ? 0 : (cfg.failedAttempts || 0) + 1,
     });
     return ok;
+  },
+
+  /* ──────────────────── fingerprint and passkey unlock ──────────────────── */
+
+  /** Everything registered on this device. */
+  async credentials() {
+    const cfg = await vault.getMeta(META_KEY);
+    return cfg?.credentials || [];
+  },
+
+  async hasCredential(kind) {
+    const cfg = await vault.getMeta(META_KEY);
+    return (cfg?.credentials || []).some((c) => c.kind === kind);
+  },
+
+  /** What this browser can actually offer, for the settings sheet to show. */
+  async availability() {
+    return {
+      supported: webauthn.isSupported(),
+      reason: webauthn.unsupportedReason(),
+      platform: await webauthn.hasPlatformAuthenticator(),
+    };
+  },
+
+  /**
+   * Registers a fingerprint ('biometric') or a passkey ('passkey'). The PIN has
+   * to exist first — it is the fallback the whole design leans on.
+   */
+  async addCredential(kind, user) {
+    const cfg = await vault.getMeta(META_KEY);
+    if (!cfg?.hash) throw new Error('Set a PIN first');
+
+    const existing = cfg.credentials || [];
+    const record = await webauthn.register({ kind, user, existing });
+
+    await vault.setMeta(META_KEY, {
+      ...cfg,
+      // One entry per method, so re-registering replaces instead of piling up.
+      credentials: [...existing.filter((c) => c.kind !== kind && c.id !== record.id), record],
+    });
+    return record;
+  },
+
+  async removeCredential(kind) {
+    const cfg = await vault.getMeta(META_KEY);
+    if (!cfg) return;
+    await vault.setMeta(META_KEY, {
+      ...cfg,
+      credentials: (cfg.credentials || []).filter((c) => c.kind !== kind),
+    });
+  },
+
+  /**
+   * Unlocks with an authenticator; `kind` narrows it to one method, omitting it
+   * accepts anything registered. Throws a readable reason on failure. A
+   * cancelled prompt is not a wrong PIN, so the failure counter is only ever
+   * cleared here, never bumped.
+   */
+  async unlockWith(kind) {
+    const cfg = await vault.getMeta(META_KEY);
+    if (!cfg?.hash) return true;
+
+    const records = (cfg.credentials || []).filter((c) => !kind || c.kind === kind);
+    await webauthn.assert(records);
+
+    await vault.setMeta(META_KEY, { ...cfg, failedAttempts: 0 });
+    return true;
   },
 
   async failedAttempts() {
