@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock, FlipVertical, MoveUp,
 } from 'lucide-react';
@@ -52,6 +52,7 @@ export default function PrivacyPage() {
   // null while unknown, so the row does not flash "None yet" at people who
   // do have passkeys.
   const [passkeyCount, setPasskeyCount] = useState(null);
+  const sheet = useUI((s) => s.sheet);
   const [flipState, setFlipState] = useState(null);
   const [tiltState, setTiltState] = useState(null);
   const openSheet = useUI((s) => s.openSheet);
@@ -73,13 +74,39 @@ export default function PrivacyPage() {
       .then(({ data }) => setBlocked(data.blocked))
       .catch(() => {});
     refreshLock();
+    refreshSecurity();
+  }, []);
+
+  /** Everything on this screen that a sheet can change. */
+  function refreshSecurity() {
+    refreshLock();
+    flip.config.get().then(setFlipState);
+    tilt.config.get().then(setTiltState);
     passkeys
       .list()
       .then((list) => setPasskeyCount(list.length))
       .catch(() => setPasskeyCount(0));
-    flip.config.get().then(setFlipState);
-    tilt.config.get().then(setTiltState);
+  }
+
+  /* The motion settings announce their own changes, so those two rows update on
+     the tap rather than waiting for anything to close. */
+  useEffect(() => {
+    const stops = [flip.config.subscribe(setFlipState), tilt.config.subscribe(setTiltState)];
+    return () => stops.forEach((stop) => stop());
   }, []);
+
+  /* Passkeys live on the server and have nothing to subscribe to, so the count
+     is re-read when whichever sheet was open goes away. Without this the row
+     still said "None yet" after one had just been added, and the only way to
+     see the truth was to reload the page. */
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (sheet) wasOpen.current = true;
+    else if (wasOpen.current) {
+      wasOpen.current = false;
+      refreshSecurity();
+    }
+  }, [sheet]);
 
   const rows = [
     { key: 'lastSeen', icon: Eye, label: 'Last seen and online' },

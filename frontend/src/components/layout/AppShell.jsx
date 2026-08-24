@@ -97,9 +97,12 @@ export function AppShell({ children }) {
     let stop = () => {};
     let cancelled = false;
 
-    (async () => {
-      const settings = await flip.config.get();
-      if (cancelled || !settings.enabled || !flip.isSupported()) return;
+    /* Re-armed on every change, so arming or disarming the gesture — or
+       switching what it does — applies immediately instead of at the next
+       reload. */
+    const arm = (settings) => {
+      stop();
+      if (!settings.enabled || !flip.isSupported()) return;
 
       stop = flip.watch(async () => {
         // The screen is face-down at the moment the gesture completes, so the
@@ -116,10 +119,19 @@ export function AppShell({ children }) {
         feedback('error');
         await useAuth.getState().logout();
       });
-    })();
+    };
+
+    const unsubscribe = flip.config.subscribe((settings) => {
+      if (!cancelled) arm(settings);
+    });
+
+    flip.config.get().then((settings) => {
+      if (!cancelled) arm(settings);
+    });
 
     return () => {
       cancelled = true;
+      unsubscribe();
       stop();
     };
   }, [status, locked]);

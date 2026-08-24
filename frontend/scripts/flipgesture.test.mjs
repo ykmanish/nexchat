@@ -55,11 +55,11 @@ const source = fs.readFileSync(
   'utf8'
 );
 const stripped = source
-  .replace("import { vault } from './vault';", '')
+  .replace(/import \{ deviceSetting \} from '\.\/devicesetting';\n/, '')
   // The app resolves extensionless imports through its bundler; raw Node ESM
   // does not, so the one that survives the strip gets its extension back.
   .replaceAll("'./motion'", "'./motion.js'")
-  .replace(/export const config = \{[\s\S]*?\n\};\n/, '');
+  .replace(/export const config = deviceSetting\([\s\S]*?\);\n/, '');
 
 /* Beside the original rather than in a temp directory, so the module's
    remaining relative import of ./motion still resolves. */

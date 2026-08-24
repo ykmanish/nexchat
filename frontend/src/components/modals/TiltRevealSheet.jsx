@@ -203,8 +203,9 @@ export function TiltRevealSheet({ open, onClose }) {
             >
               <Eye size={14} className="mt-0.5 shrink-0" />
               <span>
-                A phone in a stand never reaches the angle, so a &ldquo;Peek&rdquo; button
-                appears while things are blurred and clears them for a few seconds.
+                A phone in a stand never reaches the angle, so tapping the blurred area
+                clears it for a few seconds. That tap does nothing else — it will not open
+                the chat you tapped.
               </span>
             </motion.p>
           </>

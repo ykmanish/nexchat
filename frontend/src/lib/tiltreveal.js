@@ -1,6 +1,6 @@
 'use client';
 
-import { vault } from './vault';
+import { deviceSetting } from './devicesetting';
 import { G, isSupported, listen } from './motion';
 
 export {
@@ -74,20 +74,12 @@ export function tiltAngle({ x = 0, y = 0, z = 0 } = {}) {
 
 /* ─────────────────────────────── settings ─────────────────────────────── */
 
-/** Device-local, like the flip gesture: it describes this screen, not the account. */
-export const config = {
-  async get() {
-    const stored = await vault.getMeta(META_KEY);
-    return { enabled: false, threshold: 50, ...(stored || {}) };
-  },
-
-  async set(patch) {
-    const current = await config.get();
-    const next = { ...current, ...patch };
-    await vault.setMeta(META_KEY, next);
-    return next;
-  },
-};
+/**
+ * Device-local, like the flip gesture: it describes this screen, not the account.
+ * Observable, so the curtain restarts the moment the switch is tapped instead of
+ * waiting for a reload.
+ */
+export const config = deviceSetting(META_KEY, { enabled: false, threshold: 50 });
 
 /* ─────────────────────────────── watching ─────────────────────────────── */
 

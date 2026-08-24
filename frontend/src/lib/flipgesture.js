@@ -1,6 +1,6 @@
 'use client';
 
-import { vault } from './vault';
+import { deviceSetting } from './devicesetting';
 import { isSupported, listen } from './motion';
 
 export {
@@ -70,20 +70,10 @@ export const ACTIONS = [
  * Kept on the device, not the account. A laptop has no accelerometer, and a
  * gesture armed on a phone should not follow the user to a desktop where it can
  * never fire and would only be confusing to find switched on.
+ *
+ * Observable, so arming or disarming it takes effect on the tap.
  */
-export const config = {
-  async get() {
-    const stored = await vault.getMeta(META_KEY);
-    return { enabled: false, action: 'lock', ...(stored || {}) };
-  },
-
-  async set(patch) {
-    const current = await config.get();
-    const next = { ...current, ...patch };
-    await vault.setMeta(META_KEY, next);
-    return next;
-  },
-};
+export const config = deviceSetting(META_KEY, { enabled: false, action: 'lock' });
 
 /* ─────────────────────────────── detection ─────────────────────────────── */
 

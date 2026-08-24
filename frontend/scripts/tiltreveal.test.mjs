@@ -26,9 +26,9 @@ globalThis.window = {
    the copy beside the original so ./motion still resolves. */
 const source = fs.readFileSync(path.resolve('src/lib/tiltreveal.js'), 'utf8');
 const stripped = source
-  .replace("import { vault } from './vault';", '')
+  .replace(/import \{ deviceSetting \} from '\.\/devicesetting';\n/, '')
   .replaceAll("'./motion'", "'./motion.js'")
-  .replace(/export const config = \{[\s\S]*?\n\};\n/, '');
+  .replace(/export const config = deviceSetting\([\s\S]*?\);\n/, '');
 
 const shim = path.resolve('src/lib/.tiltreveal.undertest.mjs');
 fs.writeFileSync(shim, stripped);
