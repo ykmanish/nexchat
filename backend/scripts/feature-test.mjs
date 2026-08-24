@@ -17,6 +17,8 @@ const { connectDB, disconnectDB } = await import('../src/config/db.js');
 const { createApp } = await import('../src/app.js');
 const { User, Device } = await import('../src/models/index.js');
 const { issueTokens, hashToken } = await import('../src/services/token.js');
+const { initAttestation } = await import('../src/services/attestation.js');
+await initAttestation();
 
 await connectDB();
 const server = http.createServer(createApp());
@@ -549,6 +551,101 @@ await check('a backup can be deleted', async () => {
   assert(res.status === 200, JSON.stringify(res.body));
   const gone = await api('GET', '/backups', null, alice.token);
   assert(gone.body.backup === null, 'still there');
+});
+
+/* ── forensic attestation ── */
+
+await check('the attestation authority key is public', async () => {
+  // No token: a verifier is a third party with the file and no account.
+  const res = await api('GET', '/forensics/authority');
+  assert(res.status === 200, JSON.stringify(res.body));
+  assert(res.body.authority.publicKey, 'no public key offered');
+  assert(res.body.authority.algorithm === 'ECDSA-P256-SHA256', 'wrong algorithm');
+  assert(
+    /not an RFC 3161/i.test(res.body.authority.assurance),
+    'the authority should not let itself be mistaken for a real TSA'
+  );
+});
+
+let attested;
+await check('a root can be attested and the signature verifies', async () => {
+  const root = Buffer.from('a-merkle-root-for-testing-0001').toString('base64');
+  const res = await api(
+    'POST',
+    '/forensics/attest',
+    { exportId: 'exp-test-0001', merkleRoot: root, recordCount: 12 },
+    alice.token
+  );
+  assert(res.status === 201, JSON.stringify(res.body));
+  attested = res.body.attestation;
+  assert(attested.serverTime, 'no server time');
+  assert(attested.signature, 'no signature');
+
+  // Verify it the way an examiner would: canonical statement, authority key.
+  const { canonical } = await import('../src/services/attestation.js');
+  const statement = {
+    exportId: attested.exportId,
+    merkleRoot: attested.merkleRoot,
+    recordCount: attested.recordCount,
+    serverTime: attested.serverTime,
+    algorithm: attested.algorithm,
+  };
+  const key = await crypto.subtle.importKey(
+    'raw',
+    Buffer.from(attested.publicKey, 'base64'),
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['verify']
+  );
+  const ok = await crypto.subtle.verify(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    Buffer.from(attested.signature, 'base64'),
+    Buffer.from(canonical(statement), 'utf8')
+  );
+  assert(ok, 'the attestation signature did not verify');
+});
+
+await check('anyone holding the export id can confirm the attestation', async () => {
+  const res = await api('GET', '/forensics/attestation/exp-test-0001');
+  assert(res.status === 200, JSON.stringify(res.body));
+  assert(res.body.attestation.merkleRoot === attested.merkleRoot, 'root differs');
+  // The second channel must not leak who exported it.
+  assert(res.body.attestation.user === undefined, 'the public view leaked the exporter');
+});
+
+await check('an export id cannot be re-bound to a different root', async () => {
+  const res = await api(
+    'POST',
+    '/forensics/attest',
+    { exportId: 'exp-test-0001', merkleRoot: Buffer.from('a-different-root-entirely').toString('base64') },
+    alice.token
+  );
+  assert(res.status === 409 && res.body.code === 'ID_REUSED', 'expected a conflict, got ' + res.status);
+});
+
+await check('re-attesting the same root is idempotent', async () => {
+  const res = await api(
+    'POST',
+    '/forensics/attest',
+    { exportId: 'exp-test-0001', merkleRoot: attested.merkleRoot, recordCount: 12 },
+    alice.token
+  );
+  assert(res.status === 200 && res.body.replayed === true, 'expected a replay, got ' + res.status);
+  assert(res.body.attestation.serverTime === attested.serverTime, 'the original time moved');
+});
+
+await check('attesting requires a session', async () => {
+  const res = await api('POST', '/forensics/attest', {
+    exportId: 'exp-test-0002',
+    merkleRoot: Buffer.from('unauthenticated-attempt-here').toString('base64'),
+  });
+  assert(res.status === 401, 'an anonymous caller got an attestation, got ' + res.status);
+});
+
+await check('an unknown export id is simply not found', async () => {
+  const res = await api('GET', '/forensics/attestation/exp-does-not-exist');
+  assert(res.status === 404, 'expected 404, got ' + res.status);
 });
 
 /* ── device sync ── */

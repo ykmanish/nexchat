@@ -11,6 +11,7 @@ import linkRoutes from './link.routes.js';
 import callRoutes from './call.routes.js';
 import backupRoutes from './backup.routes.js';
 import syncRoutes from './sync.routes.js';
+import forensicsRoutes from './forensics.routes.js';
 
 const router = Router();
 
@@ -35,5 +36,6 @@ router.use('/links', linkRoutes);
 router.use('/calls', callRoutes);
 router.use('/backups', backupRoutes);
 router.use('/sync', syncRoutes);
+router.use('/forensics', forensicsRoutes);
 
 export default router;

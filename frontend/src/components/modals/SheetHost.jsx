@@ -14,6 +14,7 @@ import { CallLinkSheet } from './CallLinkSheet';
 import { PasskeySheet } from './PasskeySheet';
 import { FlipGestureSheet } from './FlipGestureSheet';
 import { TiltRevealSheet } from './TiltRevealSheet';
+import { ForensicExportSheet } from './ForensicExportSheet';
 
 /** One place that decides which sheet is on screen. */
 export function SheetHost() {
@@ -54,6 +55,7 @@ export function SheetHost() {
       <PasskeySheet open={type === 'passkeys'} onClose={close} />
       <FlipGestureSheet open={type === 'flipGesture'} onClose={close} />
       <TiltRevealSheet open={type === 'tiltReveal'} onClose={close} />
+      <ForensicExportSheet open={type === 'forensicExport'} onClose={close} {...props} />
 
       <ForwardSheet
         open={!!forwarding}

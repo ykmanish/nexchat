@@ -4,21 +4,22 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
+  Archive,
+  Ban,
   Bell,
   BellOff,
-  Pin,
-  Archive,
-  Trash2,
-  ShieldCheck,
-  Timer,
-  Users,
-  UserPlus,
-  LogOut,
-  Ban,
-  Star,
+  Crown,
   Image as ImageIcon,
   Link2,
-  Crown,
+  LogOut,
+  Pin,
+  ShieldCheck,
+  Stamp,
+  Star,
+  Timer,
+  Trash2,
+  UserPlus,
+  Users,
 } from 'lucide-react';
 import { Sheet, ConfirmDialog } from '@/components/ui/Sheet';
 import { ListButton, Button } from '@/components/ui/Button';
@@ -265,6 +266,19 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
                 />
               </div>
             )}
+
+            {/* Sits above the destructive block rather than in it: producing
+                evidence is a read-only act, but it is consequential enough that
+                it should not be one row from "Delete chat". */}
+            <div className="mx-4 mb-3 overflow-hidden rounded-2xl bg-surface-2">
+              <ListButton
+                icon={Stamp}
+                label="Export as evidence"
+                sublabel="Sealed, hash-chained, independently verifiable"
+                chevron
+                onClick={() => useUI.getState().openSheet('forensicExport', { conversation })}
+              />
+            </div>
 
             {/* ── destructive ── */}
             <div className="mx-4 overflow-hidden rounded-2xl bg-surface-2">

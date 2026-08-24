@@ -11,3 +11,4 @@ export { CallLink } from './CallLink.js';
 export { Passkey, WebAuthnChallenge } from './Passkey.js';
 export { Backup } from './Backup.js';
 export { Snapshot } from './Snapshot.js';
+export { Attestation } from './Attestation.js';

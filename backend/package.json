@@ -10,7 +10,9 @@
     "start": "node src/server.js",
     "dev:mem": "cross-env USE_MEMORY_DB=true nodemon src/server.js",
     "smoke": "node scripts/smoke-test.mjs",
-    "test:features": "node scripts/feature-test.mjs"
+    "test:features": "node scripts/feature-test.mjs",
+    "test:forensics": "node scripts/forensics.test.mjs",
+    "verify-export": "node scripts/verify-export.mjs"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

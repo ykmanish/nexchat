@@ -394,3 +394,11 @@ export const snapshotSchema = z.object({
     })
     .optional(),
 });
+
+/* ─────────────────────────── forensic exports ─────────────────────────── */
+
+export const attestSchema = z.object({
+  exportId: z.string().min(8).max(64),
+  merkleRoot: z.string().min(16).max(128),
+  recordCount: z.number().int().min(0).max(1_000_000).optional(),
+});
