@@ -6,15 +6,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDown, Lock } from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
-import { useUI } from '@/store/ui';
+import { useUI, toast } from '@/store/ui';
 import { cn, groupByDay, withGrouping } from '@/lib/utils';
 import { wallpaperClass } from '@/lib/theme';
 import { emit } from '@/lib/socket';
+import { api } from '@/lib/api';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadSearch } from './ThreadSearch';
 import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
 import { ReplyPanel } from './ReplyPanel';
+import { FirstContactBanner } from './ScamWarning';
 import { SystemMessage } from './SystemMessage';
 import { TypingBubble } from './TypingBubble';
 import { MessageActions } from './MessageActions';
@@ -36,6 +38,9 @@ export function Thread({ conversationId }) {
   const user = useAuth((s) => s.user);
   const selection = useUI((s) => s.selection);
   const repliesFor = useUI((s) => s.repliesFor);
+  /* Community standing of the other person, fetched once per direct chat and
+     only when we have never replied — the moment it is actually useful. */
+  const [reputation, setReputation] = useState(null);
   const openReplies = useUI((s) => s.openReplies);
   const closeReplies = useUI((s) => s.closeReplies);
   const searchOpen = useUI((s) => s.search.open);
@@ -140,6 +145,26 @@ export function Thread({ conversationId }) {
     );
   }
 
+  /* Only asked for when the banner will show, so an established chat costs no
+     request at all. */
+  useEffect(() => {
+    const peerId = conversation?.peer?._id;
+    if (conversation?.type !== 'direct' || !conversation.neverReplied || !peerId) {
+      setReputation(null);
+      return;
+    }
+
+    let cancelled = false;
+    api
+      .get('/users/' + peerId + '/reputation')
+      .then(({ data }) => !cancelled && setReputation(data))
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.peer?._id, conversation?.type, conversation?.neverReplied]);
+
   return (
     <div className={cn('chat-canvas relative flex h-full min-h-0 w-full flex-col overflow-hidden', canvas)}>
       <AnimatePresence mode="wait" initial={false}>
@@ -178,6 +203,24 @@ export function Thread({ conversationId }) {
               </p>
             </div>
           )}
+
+          {/* Before the first reply, not after the money has moved. */}
+          <FirstContactBanner
+            conversation={conversation}
+            reputation={reputation}
+            onBlock={async () => {
+              try {
+                await api.post('/users/block/' + conversation.peer._id);
+                toast.success('Blocked');
+                router.push('/chats');
+              } catch (err) {
+                toast.error(err.message);
+              }
+            }}
+            onReport={() =>
+              useUI.getState().openSheet('reportScam', { conversation })
+            }
+          />
 
           {loading && hasMore && (
             <div className="flex justify-center py-3">

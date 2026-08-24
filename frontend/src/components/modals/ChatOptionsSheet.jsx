@@ -1,7 +1,25 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Archive, ArchiveRestore, AtSign, Bell, BellOff, Brush, CheckCheck, Info, MonitorSmartphone, Pin, PinOff, Search, Settings, Star, Trash2, Users } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  AtSign,
+  Bell,
+  BellOff,
+  Brush,
+  CheckCheck,
+  Info,
+  MonitorSmartphone,
+  Pin,
+  PinOff,
+  Search,
+  Settings,
+  Siren,
+  Star,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { ActionSheet } from '@/components/ui/Sheet';
 import { useChat } from '@/store/chat';
 import { useUI, toast } from '@/store/ui';
@@ -115,6 +133,12 @@ export function ChatListMenuSheet({ open, onClose }) {
           label: 'New group',
           icon: Users,
           onClick: () => openSheet('newGroup'),
+        },
+        {
+          label: 'Emergency share',
+          icon: Siren,
+          danger: true,
+          onClick: () => openSheet('sos'),
         },
         {
           label: 'Archived chats',

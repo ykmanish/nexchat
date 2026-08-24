@@ -411,3 +411,12 @@ export const deletionReceiptSchema = z.object({
   signature: z.string().min(16).max(512),
   publicKey: z.string().min(16).max(512),
 });
+
+/* ─────────────────────────── scam reports ─────────────────────────── */
+
+export const scamReportSchema = z.object({
+  category: z
+    .enum(['otp-request', 'fake-payment', 'impersonation', 'lottery', 'harassment', 'other'])
+    .optional(),
+  note: z.string().max(300).nullable().optional(),
+});

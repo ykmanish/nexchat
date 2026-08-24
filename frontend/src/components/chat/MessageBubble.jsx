@@ -22,6 +22,8 @@ import { LinkPreview } from './LinkPreview';
 import { parseMessageBody, splitInlineCode, firstUrl } from '@/lib/codeblocks';
 import { seedPreview } from '@/lib/linkpreview';
 import * as mentions from '@/lib/mentions';
+import * as scamguard from '@/lib/scamguard';
+import { ScamWarning } from './ScamWarning';
 
 /* 380ms fired while a scroll or a tap was still plausibly in progress, so the
    menu kept appearing unintentionally. 550ms is roughly what the platform
@@ -67,6 +69,19 @@ export function MessageBubble({
   const [pressed, setPressed] = useState(false);
 
   const text = plain?.text || '';
+
+  /* Only messages *received* are assessed. Warning someone about their own
+     outgoing text would be nonsense, and the guard's whole framing is about
+     what somebody else is trying to get you to do. Runs on the already-decrypted
+     text, on this device, and nothing leaves it. */
+  const scam =
+    !isMine && text && conversation.type === 'direct'
+      ? scamguard.assess(text, {
+          firstContact: !!conversation.neverReplied,
+          isContact: !!conversation.peerIsContact,
+        })
+      : null;
+
   const linkUrl = firstUrl(text);
   // A sender-attached preview also warms the shared cache, so the same
   // link in a later bubble renders instantly and never refetches.
@@ -295,6 +310,8 @@ export function MessageBubble({
                   enabled={fetchPreviews}
                 />
               )}
+
+              {scam && scam.level !== 'none' && <ScamWarning assessment={scam} />}
 
               {(() => {
                 const parts = parseMessageBody(text);

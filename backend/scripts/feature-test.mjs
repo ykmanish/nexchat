@@ -553,6 +553,156 @@ await check('a backup can be deleted', async () => {
   assert(gone.body.backup === null, 'still there');
 });
 
+/* ── community scam reports ── */
+
+/* A neutral third party for reading reputation. `dave` is scoped inside another
+   test's callback, so this block needs its own. */
+const observer = await makeUser('observer');
+
+await check('you cannot report someone who has never messaged you', async () => {
+  // Guards the obvious abuse: accumulating reports against any id you can guess.
+  const res = await api('POST', '/users/' + carol.id + '/report', { category: 'other' }, observer.token);
+  assert(
+    res.status === 403 && res.body.code === 'NO_CONTACT_HISTORY',
+    'expected NO_CONTACT_HISTORY, got ' + res.status + ' ' + res.body.code
+  );
+});
+
+await check('you cannot report yourself', async () => {
+  const res = await api('POST', '/users/' + alice.id + '/report', {}, alice.token);
+  assert(res.status === 400 && res.body.code === 'SELF', 'expected SELF, got ' + res.body.code);
+});
+
+let scammer;
+await check('a report from someone who was messaged is accepted, and blocks', async () => {
+  scammer = await makeUser('scammer');
+
+  // The scammer messages alice, which is what earns her the right to report.
+  const conv = await api('POST', '/conversations/direct', { userId: alice.id }, scammer.token);
+  assert(conv.status === 201 || conv.status === 200, JSON.stringify(conv.body));
+
+  const msg = await api(
+    'POST',
+    '/messages',
+    {
+      conversationId: conv.body.conversation._id,
+      clientId: 'cid-scam-1',
+      ...envelope('send me your OTP quickly'),
+    },
+    scammer.token
+  );
+  assert(msg.status === 201, JSON.stringify(msg.body));
+
+  const res = await api(
+    'POST',
+    '/users/' + scammer.id + '/report',
+    { category: 'otp-request', note: 'asked for my OTP' },
+    alice.token
+  );
+  assert(res.status === 201, JSON.stringify(res.body));
+  assert(res.body.blocked === true, 'reporting should block immediately');
+
+  // Blocking is the reporter's own protection and must not wait on consensus.
+  const blocked = await api('GET', '/users/blocked', null, alice.token);
+  assert(
+    blocked.body.blocked.some((u) => String(u._id) === String(scammer.id)),
+    'the reporter did not end up with them blocked'
+  );
+});
+
+await check('one person reporting twice counts once', async () => {
+  const again = await api('POST', '/users/' + scammer.id + '/report', { category: 'other' }, alice.token);
+  assert(again.status === 201, JSON.stringify(again.body));
+  assert(again.body.reportsFiled === 1, 'a second report from the same person was counted: ' + again.body.reportsFiled);
+});
+
+await check('nothing is surfaced below the threshold', async () => {
+  // One report is one grudge. Showing a count here would let anyone measure
+  // the effect of their own report.
+  const res = await api('GET', '/users/' + scammer.id + '/reputation', null, bob.token);
+  assert(res.status === 200, JSON.stringify(res.body));
+  assert(res.body.flagged === false, 'flagged on a single report');
+  assert(res.body.reporters === undefined, 'leaked the count below the threshold');
+});
+
+await check('several unrelated reporters do surface a warning', async () => {
+  // bob and carol each need to have been messaged before they can report.
+  for (const victim of [bob, carol]) {
+    const conv = await api('POST', '/conversations/direct', { userId: victim.id }, scammer.token);
+    await api(
+      'POST',
+      '/messages',
+      {
+        conversationId: conv.body.conversation._id,
+        clientId: 'cid-scam-' + victim.id,
+        ...envelope('share the otp'),
+      },
+      scammer.token
+    );
+    const r = await api('POST', '/users/' + scammer.id + '/report', { category: 'otp-request' }, victim.token);
+    assert(r.status === 201, JSON.stringify(r.body));
+  }
+
+  const res = await api('GET', '/users/' + scammer.id + '/reputation', null, observer.token);
+  assert(res.body.flagged === true, 'three reporters did not reach the threshold');
+  assert(res.body.reporters === 3, 'expected 3 reporters, got ' + res.body.reporters);
+  assert(res.body.topCategory === 'otp-request', 'wrong top category: ' + res.body.topCategory);
+  // A community flag is not a verdict, and the wording has to say so.
+  assert(/unverified/i.test(res.body.caveat), 'the caveat does not say reports are unverified');
+});
+
+await check('reporters are never disclosed', async () => {
+  const res = await api('GET', '/users/' + scammer.id + '/reputation', null, observer.token);
+  const body = JSON.stringify(res.body);
+  for (const who of [alice.id, bob.id, carol.id]) {
+    assert(!body.includes(String(who)), 'a reporter id leaked into the reputation response');
+  }
+});
+
+await check('a report can be withdrawn', async () => {
+  const res = await api('DELETE', '/users/' + scammer.id + '/report', null, alice.token);
+  assert(res.status === 200, JSON.stringify(res.body));
+
+  const after = await api('GET', '/users/' + scammer.id + '/reputation', null, observer.token);
+  assert(after.body.flagged === false, 'withdrawing did not drop it below the threshold');
+
+  const mine = await api('GET', '/users/reports/mine', null, alice.token);
+  assert(
+    !mine.body.reports.some((r) => String(r.user._id) === String(scammer.id)),
+    'the withdrawn report is still listed'
+  );
+});
+
+/* ── first-contact signal ── */
+
+await check('a chat you have never replied in is marked as first contact', async () => {
+  const list = await api('GET', '/conversations', null, alice.token);
+  const fromScammer = list.body.conversations.find(
+    (c) => c.type === 'direct' && String(c.peer?._id) === String(scammer.id)
+  );
+  assert(fromScammer, 'the scammer conversation is missing');
+  assert(fromScammer.neverReplied === true, 'should be flagged as never replied');
+  assert(fromScammer.peerIsContact === false, 'a stranger should not read as a contact');
+});
+
+await check('replying clears the first-contact flag', async () => {
+  const list = await api('GET', '/conversations', null, alice.token);
+  const conv = list.body.conversations.find(
+    (c) => c.type === 'direct' && String(c.peer?._id) === String(scammer.id)
+  );
+
+  await api(
+    'POST',
+    '/messages',
+    { conversationId: conv._id, clientId: 'cid-reply-1', ...envelope('who is this') },
+    alice.token
+  );
+
+  const after = await api('GET', '/conversations', null, alice.token);
+  const updated = after.body.conversations.find((c) => String(c._id) === String(conv._id));
+  assert(updated.neverReplied === false, 'the flag survived a reply');
+});
+
 /* ── transparency dashboard ── */
 
 await check('the transparency report is scoped to the caller and honest', async () => {

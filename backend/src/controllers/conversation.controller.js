@@ -91,6 +91,15 @@ export function serialize(conv, userId, viewer = null) {
     inviteCode: doc.inviteCode,
     settings: doc.settings,
     bannedCount: (doc.bans || []).length,
+
+    /* First-contact signal, where most scams begin. Free: `lastSentAt` is
+       already on the participant record for slow mode, so "they messaged me and
+       I have never replied" needs no extra query. */
+    neverReplied: !me?.lastSentAt,
+    peerIsContact:
+      doc.type === 'direct' && peer
+        ? (seenBy.contacts || []).some((c) => String(c) === String(peer._id))
+        : false,
     // per-viewer state
     unreadCount: me?.unreadCount ?? 0,
     mentionCount: me?.mentionCount ?? 0,

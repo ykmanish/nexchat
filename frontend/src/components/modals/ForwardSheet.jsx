@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Check, Forward } from 'lucide-react';
+import { Check, Forward, Search, ShieldAlert } from 'lucide-react';
 import { Sheet } from '@/components/ui/Sheet';
 import { Input } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { useChat } from '@/store/chat';
+import * as scamguard from '@/lib/scamguard';
 import { toast } from '@/store/ui';
 import { cn, truncate } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
@@ -20,6 +21,14 @@ export function ForwardSheet({ open, onClose, messages = [] }) {
   const [selected, setSelected] = useState([]);
   const [query, setQuery] = useState('');
   const [sending, setSending] = useState(false);
+
+  /* The risk on a forward runs the opposite way to the risk on receipt.
+     "Your OTP is 428193" is perfectly normal to *have*; passing it on to
+     whoever asked for it is how the money leaves. So this warning belongs at
+     the moment of sending, not on the message itself. */
+  const secrets = messages
+    .map((m) => scamguard.carriesSecret(plain[m._id]?.text || ''))
+    .filter(Boolean);
 
   useEffect(() => {
     if (open) {
@@ -80,6 +89,25 @@ export function ForwardSheet({ open, onClose, messages = [] }) {
           disabled={!selected.length}
           onClick={send}
         >
+      {secrets.length > 0 && (
+        <div className="mx-5 mb-3 flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger/10 px-3.5 py-3">
+          <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" />
+          <div className="min-w-0">
+            <p className="text-[12.5px] font-semibold text-danger">
+              {secrets.length === 1
+                ? 'This message contains a one-time code'
+                : secrets.length + ' of these contain a one-time code'}
+            </p>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-muted">
+              {secrets[0].reason} Nobody legitimate — no bank, no company, no support desk —
+              will ever ask you to pass one on.
+            </p>
+            <p className="mt-1 font-mono text-[12px] text-ink-faint">
+              found: {secrets.map((s) => s.masked).join(', ')}
+            </p>
+          </div>
+        </div>
+      )}
           {selected.length ? 'Send to ' + selected.length : 'Select a chat'}
         </Button>
       }
