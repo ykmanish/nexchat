@@ -156,6 +156,13 @@ every existing session out. Regenerating the VAPID pair invalidates every push
 subscription — the server will mint a temporary pair and log it if you leave
 them blank, but a fresh pair on each restart means push silently stops working.
 
+`FORENSIC_ATTEST_KEY` is the one secret you should treat as append-only.
+Rotating it does not just inconvenience anyone; it makes every forensic export
+attestation ever issued permanently unverifiable, including exports already
+produced and relied on. Set it once, back it up, and leave it alone. Blank
+behaves like the VAPID case but worse: a new key per restart, so an attestation
+stops checking out minutes after it was made.
+
 **MongoDB.** Reuse your existing `MONGODB_URI`. If you'd rather run it locally,
 install `mongodb-org` and use `mongodb://127.0.0.1:27017/nexchat` — but then
 you own the backups.
