@@ -17,6 +17,7 @@ import { DesktopRail } from './DesktopRail';
 import { SheetHost } from '@/components/modals/SheetHost';
 import { CallOverlay } from '@/components/chat/CallOverlay';
 import { Lightbox } from '@/components/chat/Lightbox';
+import { TiltCurtain } from '@/components/chat/TiltCurtain';
 
 /**
  * One shell for both layouts. Below `lg` it is a single stacked column with a
@@ -199,6 +200,7 @@ export function AppShell({ children }) {
       <SheetHost />
       <CallOverlay />
       <Lightbox />
+      <TiltCurtain />
     </div>
   );
 }

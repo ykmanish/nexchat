@@ -4,3 +4,8 @@ node_modules
 out
 .env.local
 .DS_Store
+
+# Working copies the motion tests write beside the modules they exercise, so
+# the relative imports still resolve. Removed on a clean run; ignored so a
+# failed one cannot leave a committable artefact.
+src/lib/.*.undertest.mjs

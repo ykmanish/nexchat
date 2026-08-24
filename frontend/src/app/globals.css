@@ -319,6 +319,31 @@
   .surface-raised {
     background: var(--raised);
   }
+
+  /* ── tilt to read ──
+     Anything marked `data-private` hides while the phone is lying flat. Driven
+     by one class on <html> rather than React state: the sensor reports at 60Hz,
+     and re-rendering every bubble that often to change a filter would be
+     absurd, so the toggle costs a single class mutation.
+
+     Blur alone leaves text guessable from shape and length, so contrast drops
+     with it — the goal is illegible, not merely fuzzy. */
+  [data-private] {
+    transition:
+      filter 0.22s ease,
+      opacity 0.22s ease;
+  }
+
+  .tilt-hidden [data-private] {
+    filter: blur(8px) saturate(0.6);
+    opacity: 0.5;
+    /* Selecting text you cannot read only produces an accidental copy. */
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Scrolling has to keep working while hidden, so pointer events are left
+     alone — the peek control is a real button instead of a hidden tap target. */
 }
 
 /* ═══════════════════════════ chat wallpapers ═══════════════════════════ */

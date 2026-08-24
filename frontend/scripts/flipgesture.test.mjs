@@ -9,7 +9,6 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 
 /* ── harness ── */
 
@@ -57,9 +56,14 @@ const source = fs.readFileSync(
 );
 const stripped = source
   .replace("import { vault } from './vault';", '')
+  // The app resolves extensionless imports through its bundler; raw Node ESM
+  // does not, so the one that survives the strip gets its extension back.
+  .replaceAll("'./motion'", "'./motion.js'")
   .replace(/export const config = \{[\s\S]*?\n\};\n/, '');
 
-const shim = path.join(os.tmpdir(), 'flipgesture.undertest.mjs');
+/* Beside the original rather than in a temp directory, so the module's
+   remaining relative import of ./motion still resolves. */
+const shim = path.resolve('src/lib/.flipgesture.undertest.mjs');
 fs.writeFileSync(shim, stripped);
 const flip = await import('file://' + shim.replace(/\\/g, '/'));
 

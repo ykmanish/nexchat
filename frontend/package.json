@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:flip": "node scripts/flipgesture.test.mjs"
+    "test:motion": "node scripts/flipgesture.test.mjs && node scripts/tiltreveal.test.mjs"
   },
   "dependencies": {
     "axios": "^1.7.9",

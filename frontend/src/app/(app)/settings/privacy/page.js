@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock, FlipVertical,
+  Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock, FlipVertical, MoveUp,
 } from 'lucide-react';
 import { SettingsShell, SettingsGroup, SettingsRow, Divider } from '@/components/layout/SettingsShell';
 import { Switch, Segmented } from '@/components/ui/Field';
@@ -17,6 +17,7 @@ import { AppLockSheet } from '@/components/modals/AppLockSheet';
 import { appLock, AUTO_LOCK_OPTIONS } from '@/lib/applock';
 import * as passkeys from '@/lib/passkeys';
 import * as flip from '@/lib/flipgesture';
+import * as tilt from '@/lib/tiltreveal';
 
 /** "On · After 5 minutes · fingerprint and passkey" */
 function lockSummary({ enabled, autoLockSeconds, kinds }) {
@@ -52,6 +53,7 @@ export default function PrivacyPage() {
   // do have passkeys.
   const [passkeyCount, setPasskeyCount] = useState(null);
   const [flipState, setFlipState] = useState(null);
+  const [tiltState, setTiltState] = useState(null);
   const openSheet = useUI((s) => s.openSheet);
 
   const refreshLock = () =>
@@ -76,6 +78,7 @@ export default function PrivacyPage() {
       .then((list) => setPasskeyCount(list.length))
       .catch(() => setPasskeyCount(0));
     flip.config.get().then(setFlipState);
+    tilt.config.get().then(setTiltState);
   }, []);
 
   const rows = [
@@ -169,6 +172,23 @@ export default function PrivacyPage() {
           onClick={() => {
             feedback('open');
             openSheet('flipGesture');
+          }}
+        />
+        <Divider />
+        <ListButton
+          icon={MoveUp}
+          label="Tilt to read"
+          sublabel={
+            !tilt.isSupported()
+              ? tilt.unsupportedReason() || 'Not available on this device'
+              : tiltState?.enabled
+                ? 'On · reveals past ' + tiltState.threshold + '°'
+                : 'Off'
+          }
+          chevron
+          onClick={() => {
+            feedback('open');
+            openSheet('tiltReveal');
           }}
         />
         <Divider />

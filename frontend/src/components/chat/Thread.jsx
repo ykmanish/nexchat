@@ -160,6 +160,7 @@ export function Thread({ conversationId }) {
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        data-private
         className="scroll-soft relative z-[1] min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
       >
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end pb-2 pt-3">

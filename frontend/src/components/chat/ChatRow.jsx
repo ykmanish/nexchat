@@ -237,6 +237,7 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
             )}
 
             <span
+              data-private
               className={cn(
                 'min-w-0 flex-1 truncate text-[14px] leading-snug',
                 preview.typing ? 'text-brand-strong' : 'text-ink-muted',

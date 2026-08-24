@@ -1,6 +1,15 @@
 'use client';
 
 import { vault } from './vault';
+import { isSupported, listen } from './motion';
+
+export {
+  isSupported,
+  needsPermission,
+  requestPermission,
+  unsupportedReason,
+  probe,
+} from './motion';
 
 /**
  * Flip face-down and back up to lock or sign out.
@@ -55,78 +64,6 @@ export const ACTIONS = [
   },
 ];
 
-/* ───────────────────────────── capability ───────────────────────────── */
-
-export function isSupported() {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.DeviceMotionEvent !== 'undefined' &&
-    window.isSecureContext
-  );
-}
-
-/** iOS gates motion behind a prompt that must come from a real tap. */
-export const needsPermission = () =>
-  isSupported() && typeof window.DeviceMotionEvent.requestPermission === 'function';
-
-/** Why this cannot be offered here, or null when it can. */
-export function unsupportedReason() {
-  if (typeof window === 'undefined') return null;
-  if (!window.isSecureContext) return 'Needs a secure (https) connection';
-  if (typeof window.DeviceMotionEvent === 'undefined') {
-    return 'This device has no motion sensor';
-  }
-  return null;
-}
-
-/**
- * Asks for motion access. Call from inside a click handler — iOS rejects it
- * otherwise, and the rejection looks identical to the user saying no.
- */
-export async function requestPermission() {
-  if (!needsPermission()) return true;
-  try {
-    const result = await window.DeviceMotionEvent.requestPermission();
-    return result === 'granted';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Waits for a real sample to prove there is a sensor behind the API.
- *
- * `DeviceMotionEvent` exists in desktop Chrome whether or not the machine has an
- * accelerometer, so feature detection alone would happily let someone arm a
- * gesture on a laptop that can never fire it. Listening for actual gravity is
- * the only honest test — nothing arrives on a device with no sensor.
- */
-export function probe({ timeout = 2000 } = {}) {
-  if (!isSupported()) return Promise.resolve(false);
-
-  return new Promise((resolve) => {
-    let settled = false;
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      window.removeEventListener('devicemotion', onMotion);
-      clearTimeout(timer);
-      resolve(result);
-    };
-
-    const onMotion = (event) => {
-      const z = event.accelerationIncludingGravity?.z;
-      // A sensorless browser still fires the event, just with null readings —
-      // so the presence of a number is the signal, not the event itself.
-      if (typeof z === 'number' && !Number.isNaN(z)) finish(true);
-    };
-
-    const timer = setTimeout(() => finish(false), timeout);
-    window.addEventListener('devicemotion', onMotion);
-  });
-}
-
 /* ─────────────────────────────── settings ─────────────────────────────── */
 
 /**
@@ -166,10 +103,7 @@ export function watch(onFlip, { minDown = MIN_DOWN_MS, maxDown = MAX_DOWN_MS } =
      back up would each re-fire while the handler is still running. */
   let armed = true;
 
-  const onMotion = (event) => {
-    const z = event.accelerationIncludingGravity?.z;
-    if (typeof z !== 'number' || Number.isNaN(z)) return;
-
+  const onMotion = ({ z }) => {
     smoothed = smoothed === null ? z : smoothed + SMOOTHING * (z - smoothed);
 
     const next =
@@ -202,8 +136,7 @@ export function watch(onFlip, { minDown = MIN_DOWN_MS, maxDown = MAX_DOWN_MS } =
     }
   };
 
-  window.addEventListener('devicemotion', onMotion);
-  return () => window.removeEventListener('devicemotion', onMotion);
+  return listen(onMotion);
 }
 
 export const TIMING = { minDown: MIN_DOWN_MS, maxDown: MAX_DOWN_MS };
