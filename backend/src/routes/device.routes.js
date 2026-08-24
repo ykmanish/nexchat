@@ -20,6 +20,7 @@ router.patch('/:deviceId', device.renameDevice);
 router.delete('/:deviceId', device.revokeDevice);
 router.post('/revoke-others', device.revokeAllOtherDevices);
 router.post('/push-subscription', device.updatePushSubscription);
+router.post('/push-test', device.testPush);
 
 router.post('/link/scan', validate(v.linkCodeSchema), device.scanLink);
 router.post('/link/approve', validate(v.approveLinkSchema), device.approveLink);

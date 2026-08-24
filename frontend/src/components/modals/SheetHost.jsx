@@ -17,6 +17,7 @@ import { TiltRevealSheet } from './TiltRevealSheet';
 import { ForensicExportSheet } from './ForensicExportSheet';
 import { ReportScamSheet } from './ReportScamSheet';
 import { SosSheet } from './SosSheet';
+import { ShakeSosSheet } from './ShakeSosSheet';
 
 /** One place that decides which sheet is on screen. */
 export function SheetHost() {
@@ -60,6 +61,7 @@ export function SheetHost() {
       <ForensicExportSheet open={type === 'forensicExport'} onClose={close} {...props} />
       <ReportScamSheet open={type === 'reportScam'} onClose={close} {...props} />
       <SosSheet open={type === 'sos'} onClose={close} />
+      <ShakeSosSheet open={type === 'shakeSos'} onClose={close} />
 
       <ForwardSheet
         open={!!forwarding}

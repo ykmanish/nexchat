@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, MapPin, Siren, TriangleAlert, X } from 'lucide-react';
+import { ChevronRight, Loader2, MapPin, Siren, TriangleAlert, Vibrate, X } from 'lucide-react';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { Textarea, RadioRow } from '@/components/ui/Field';
 import { Avatar } from '@/components/ui/Avatar';
 import { useChat } from '@/store/chat';
-import { toast } from '@/store/ui';
+import { toast, useUI } from '@/store/ui';
 import * as sos from '@/lib/sos';
+import * as shake from '@/lib/shakegesture';
 import { cn } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 
@@ -27,22 +28,41 @@ import { feedback } from '@/lib/sound';
  */
 export function SosSheet({ open, onClose }) {
   const conversations = useChat((s) => s.conversations);
+  const contacts = useChat((s) => s.contacts);
+  const loadContacts = useChat((s) => s.loadContacts);
+  const openSheet = useUI((s) => s.openSheet);
 
   const [settings, setSettings] = useState(null);
   const [live, setLive] = useState(sos.active());
   const [busy, setBusy] = useState(false);
+  const [shakeOn, setShakeOn] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     sos.config.get().then(setSettings);
+    shake.config.get().then((c) => setShakeOn(!!c.enabled));
+    loadContacts().catch(() => {});
     setLive(sos.active());
   }, [open]);
 
-  /* Everyone this account has a direct chat with — the only people it makes
-     sense to send an emergency message to. */
-  const people = conversations
-    .filter((c) => c.type === 'direct' && c.peer)
-    .map((c) => c.peer);
+  /* Anyone reachable, not only people there is already a chat with. Sending
+     opens the conversation if it does not exist yet — `createDirect` is
+     idempotent — so requiring one first was an artificial barrier at the worst
+     possible moment: a saved contact you have never messaged is exactly who you
+     might want to tell. */
+  const people = useMemo(() => {
+    const map = new Map();
+    conversations
+      .filter((c) => c.type === 'direct' && c.peer)
+      .forEach((c) => map.set(String(c.peer._id), c.peer));
+    contacts.forEach((p) => {
+      const key = String(p._id || p.id);
+      if (!map.has(key)) map.set(key, { ...p, _id: key });
+    });
+    return [...map.values()].sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''))
+    );
+  }, [conversations, contacts]);
 
   const chosen = settings?.contactIds || [];
 
@@ -136,8 +156,8 @@ export function SosSheet({ open, onClose }) {
 
             {people.length === 0 ? (
               <p className="mb-4 rounded-xl bg-surface-2 px-4 py-3 text-[13px] leading-relaxed text-ink-muted">
-                Start a chat with someone first — an emergency message goes to a conversation,
-                so there has to be one.
+                Add a contact or start a chat first — an emergency message goes to a
+                conversation, so there has to be somebody to send it to.
               </p>
             ) : (
               <div className="mb-4 max-h-[220px] space-y-1 overflow-y-auto">
@@ -200,6 +220,31 @@ export function SosSheet({ open, onClose }) {
             >
               Send emergency alert now
             </Button>
+
+            {/* The shortcut belongs here, not only buried in Privacy: somebody
+                choosing emergency contacts is exactly the person who wants a way
+                to trigger this without looking at a screen. */}
+            <button
+              type="button"
+              onClick={() => {
+                feedback('open');
+                openSheet('shakeSos');
+              }}
+              className="mt-3 flex w-full items-center gap-3 rounded-xl bg-surface-2 px-4 py-3 text-left transition-colors hover:bg-surface-3"
+            >
+              <Vibrate size={17} className="shrink-0 text-ink-muted" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-medium">Shake to trigger this</span>
+                <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-muted">
+                  {shakeOn
+                    ? 'On — a shake starts a ' +
+                      Math.round(shake.COUNTDOWN_MS / 1000) +
+                      '-second countdown you can cancel'
+                    : 'Set up a shake gesture so you do not have to find this screen'}
+                </span>
+              </span>
+              <ChevronRight size={17} className="shrink-0 text-ink-faint" />
+            </button>
 
             <p className="mt-3 px-1 text-[12px] leading-relaxed text-ink-faint">
               Your location is sent as an ordinary encrypted message, so only these people can

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { EyeOff, Loader2, Image as ImageIcon, Video } from 'lucide-react';
+import { EyeOff, Loader2, Image as ImageIcon, ShieldAlert, Video } from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useUI, toast } from '@/store/ui';
 import { useAuth } from '@/store/auth';
@@ -116,6 +116,16 @@ export function ViewOnceBubble({ message, isMine }) {
               ? 'No longer available'
               : 'Tap to view once'}
         </span>
+        {/* Worth saying on the bubble rather than only inside the viewer: the
+            person deciding whether to open it should know the screen will go
+            black if they try to capture it, and the sender should not be left
+            assuming more protection than a browser can give. */}
+        {!spent && !isMine && (
+          <span className="mt-1 flex items-center gap-1 text-[11px] opacity-55">
+            <ShieldAlert size={11} className="shrink-0" />
+            Screenshots are blanked where the browser allows it
+          </span>
+        )}
       </span>
     </motion.button>
   );

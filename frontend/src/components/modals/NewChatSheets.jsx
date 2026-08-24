@@ -64,21 +64,29 @@ export function NewChatSheet({ open, onClose }) {
   const createDirect = useChat((s) => s.createDirect);
   const openSheet = useUI((s) => s.openSheet);
 
-  const [contacts, setContacts] = useState([]);
+  /* Read from the store rather than fetched here. The sheet used to hold the
+     list in its own state, so every open started from empty and a request that
+     failed left "No contacts yet" on screen — indistinguishable from actually
+     having none. */
+  const contacts = useChat((s) => s.contacts);
+  const addedYou = useChat((s) => s.addedYou);
+  const messaged = useChat((s) => s.messaged);
+  const contactsLoaded = useChat((s) => s.contactsLoaded);
+  const loadContacts = useChat((s) => s.loadContacts);
+
   const [results, setResults] = useState([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    api
-      .get('/users/contacts')
-      .then(({ data }) => setContacts(data.contacts))
-      .catch(() => {});
     setQuery('');
     setResults([]);
-  }, [open]);
+    setFailed(false);
+    loadContacts({ force: true }).catch(() => setFailed(true));
+  }, [open, loadContacts]);
 
   const search = useMemo(
     () =>
@@ -114,7 +122,33 @@ export function NewChatSheet({ open, onClose }) {
     }
   }
 
-  const showing = query.trim().length >= 2 ? results : contacts;
+  const searching = query.trim().length >= 2;
+
+  /* Three groups, in the order they are useful. Saved contacts first; then
+     people whose address book already has this account, who can message you
+     whether or not you ever save them; then anyone there is already a chat
+     with. Everybody reachable is on this screen, which is the fix — a
+     one-directional contact used to be invisible here. */
+  const groups = searching
+    ? [{ key: 'results', title: 'Search results', people: results }]
+    : [
+        { key: 'contacts', title: 'Your contacts', people: contacts },
+        {
+          key: 'addedYou',
+          title: 'Added you',
+          hint: 'They have you in their contacts',
+          people: addedYou,
+          saveable: true,
+        },
+        {
+          key: 'messaged',
+          title: 'You have chatted with',
+          people: messaged,
+          saveable: true,
+        },
+      ].filter((g) => g.people.length > 0);
+
+  const nobody = groups.every((g) => g.people.length === 0);
 
   return (
     <Sheet open={open} onClose={onClose} title="New chat" size="md">
@@ -155,12 +189,6 @@ export function NewChatSheet({ open, onClose }) {
         />
       </div>
 
-      <div className="px-5 pb-1 pt-2">
-        <h3 className="text-[12px] font-semibold uppercase tracking-wide text-ink-faint">
-          {query.trim().length >= 2 ? 'Search results' : 'Your contacts'}
-        </h3>
-      </div>
-
       <div className="pb-4">
         {loading && (
           <div className="flex justify-center py-6">
@@ -168,24 +196,112 @@ export function NewChatSheet({ open, onClose }) {
           </div>
         )}
 
-        {!loading && showing.length === 0 && (
+        {!loading && !searching && !contactsLoaded && !failed && (
+          <div className="flex justify-center py-8">
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-brand" />
+          </div>
+        )}
+
+        {failed && !searching && (
+          <div className="px-5 py-8 text-center">
+            <p className="text-[13.5px] text-ink-muted">
+              Could not load your people. Check your connection.
+            </p>
+            <Button
+              size="xs"
+              variant="secondary"
+              className="mt-3"
+              onClick={() => {
+                setFailed(false);
+                loadContacts({ force: true }).catch(() => setFailed(true));
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {!loading && !failed && (searching || contactsLoaded) && nobody && (
           <p className="px-5 py-8 text-center text-[13.5px] text-ink-muted">
-            {query.trim().length >= 2
+            {searching
               ? 'No one found. Check the spelling, or add them as a contact.'
-              : 'No contacts yet. Add someone to get started.'}
+              : 'Nobody to show yet. Add someone by email or username to get started.'}
           </p>
         )}
 
-        {showing.map((person) => (
-          <PersonRow
-            key={person._id || person.id}
-            person={person}
-            busy={busyId === (person._id || person.id)}
-            onClick={() => start(person)}
-          />
+        {groups.map((group) => (
+          <section key={group.key}>
+            <div className="px-5 pb-1 pt-3">
+              <h3 className="text-[12px] font-semibold uppercase tracking-wide text-ink-faint">
+                {group.title}
+              </h3>
+              {group.hint && (
+                <p className="mt-0.5 text-[12px] text-ink-faint">{group.hint}</p>
+              )}
+            </div>
+            {group.people.map((person) => (
+              <PersonRow
+                key={person._id || person.id}
+                person={person}
+                busy={busyId === (person._id || person.id)}
+                onClick={() => start(person)}
+                trailing={group.saveable ? <SaveContactButton person={person} /> : undefined}
+              />
+            ))}
+          </section>
         ))}
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * The little "save" on a person who is reachable but not saved.
+ *
+ * Sits inside the row rather than replacing it, because tapping the row should
+ * still just open the chat — saving is the secondary action, and making the
+ * whole row mean "save" would be a trap for anyone who only wanted to reply.
+ */
+function SaveContactButton({ person }) {
+  const saveContact = useChat((s) => s.saveContact);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  if (done) {
+    return (
+      <span className="shrink-0 text-[12px] font-semibold text-brand-strong">Saved</span>
+    );
+  }
+
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={'Save ' + person.name + ' to contacts'}
+      onClick={async (e) => {
+        // The row underneath opens the chat; this does not.
+        e.stopPropagation();
+        if (busy) return;
+        setBusy(true);
+        try {
+          await saveContact(person._id || person.id, { name: person.name });
+          feedback('success');
+          setDone(true);
+        } catch (err) {
+          toast.error(err.message || 'Could not save that contact');
+        } finally {
+          setBusy(false);
+        }
+      }}
+      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.click()}
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-2 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink"
+    >
+      {busy ? (
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line border-t-brand" />
+      ) : (
+        <UserPlus size={15} />
+      )}
+    </span>
   );
 }
 
@@ -250,6 +366,9 @@ export function NewContactSheet({ open, onClose }) {
       const payload = mode === 'email' ? { email: value.trim() } : { username: value.trim().replace('@', '') };
       const { data } = await api.post('/users/contacts', payload);
       setFound(data.contact);
+      // The shared list is what New chat and New group render from; without
+      // this the person just added would not be there until the next reload.
+      useChat.getState().loadContacts({ force: true }).catch(() => {});
       feedback('success');
       toast.success(data.already ? 'Already in your contacts' : data.contact.name + ' added');
     } catch (err) {
@@ -355,8 +474,15 @@ export function NewGroupSheet({ open, onClose, mode = 'group' }) {
   const createGroup = useChat((s) => s.createGroup);
   const createCommunity = useChat((s) => s.createCommunity);
 
+  /* Anyone reachable can be put in a group, not only saved contacts — the same
+     reasoning as New chat. Someone who messaged you first should not have to be
+     saved before they can be invited. */
+  const contacts = useChat((s) => s.contacts);
+  const addedYou = useChat((s) => s.addedYou);
+  const messaged = useChat((s) => s.messaged);
+  const loadContacts = useChat((s) => s.loadContacts);
+
   const [step, setStep] = useState('members');
-  const [contacts, setContacts] = useState([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState([]);
   const [name, setName] = useState('');
@@ -372,14 +498,17 @@ export function NewGroupSheet({ open, onClose, mode = 'group' }) {
     setName('');
     setAbout('');
     setQuery('');
-    api
-      .get('/users/contacts')
-      .then(({ data }) => setContacts(data.contacts))
-      .catch(() => {});
-  }, [open]);
+    loadContacts({ force: true }).catch(() => {});
+  }, [open, loadContacts]);
 
-  const filtered = contacts.filter((c) =>
-    c.name.toLowerCase().includes(query.trim().toLowerCase())
+  const people = useMemo(() => {
+    const map = new Map();
+    [...contacts, ...addedYou, ...messaged].forEach((p) => map.set(String(p._id || p.id), p));
+    return [...map.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [contacts, addedYou, messaged]);
+
+  const filtered = people.filter((c) =>
+    String(c.name || '').toLowerCase().includes(query.trim().toLowerCase())
   );
 
   function toggle(person) {
@@ -491,7 +620,7 @@ export function NewGroupSheet({ open, onClose, mode = 'group' }) {
             <div className="pb-4">
               {filtered.length === 0 && (
                 <p className="px-5 py-8 text-center text-[13.5px] text-ink-muted">
-                  No contacts to show. Add contacts first.
+                  Nobody to show yet. Add a contact, or start a chat first.
                 </p>
               )}
               {filtered.map((person) => (

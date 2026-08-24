@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import { Archive, AtSign, BellOff, Check, CheckCheck, Clock, FileText, Image as ImageIcon, Mic, Phone, Pin, Users, Video } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
@@ -21,9 +21,18 @@ const KIND_ICONS = {
 
 const LONG_PRESS_MS = 420;
 
-/** Builds the one-line preview under a chat name. */
+/**
+ * Builds the one-line preview under a chat name.
+ *
+ * The subscription is to *this* message's payload, not the whole `plain` map.
+ * Selecting the map meant every decryption anywhere in the app produced a new
+ * object identity and re-rendered every row in the list — so opening a busy chat
+ * re-rendered the entire sidebar forty times in a row, once per decrypted
+ * message. That was the jank.
+ */
 function usePreview(conversation, currentUserId) {
-  const plain = useChat((s) => s.plain);
+  const lastId = conversation.lastMessage?._id;
+  const payload = useChat((s) => (lastId ? s.plain[lastId] : undefined));
   const typing = useChat((s) => s.typing[conversation._id]);
 
   const typingNames = Object.values(typing || {});
@@ -48,7 +57,6 @@ function usePreview(conversation, currentUserId) {
     return { text: 'This message was deleted', muted: true, italic: true };
   }
 
-  const payload = plain[last._id];
   const isMine = String(last.sender?._id || last.sender) === String(currentUserId);
   const senderName =
     conversation.type !== 'direct' && !isMine ? last.sender?.name?.split(' ')[0] : null;
@@ -111,9 +119,12 @@ function receiptStatus(message) {
   return 'sent';
 }
 
-export function ChatRow({ conversation, active, currentUserId, onOpen, showDivider = true }) {
+function ChatRowBase({ conversation, active, currentUserId, onOpen, showDivider = true }) {
   const preview = usePreview(conversation, currentUserId);
-  const presence = useChat((s) => s.presence);
+  /* One boolean rather than the presence map, for the same reason as the
+     payload above: somebody coming online used to re-render every row. */
+  const peerId = conversation.type === 'direct' ? conversation.peer?._id : null;
+  const peerOnline = useChat((s) => (peerId ? !!s.presence[peerId] : false));
   const setConversationState = useChat((s) => s.setConversationState);
   const openSheet = useUI((s) => s.openSheet);
 
@@ -124,10 +135,7 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
   const archiveOpacity = useTransform(x, [-96, -40, 0], [1, 0.4, 0]);
   const pinOpacity = useTransform(x, [0, 40, 96], [0, 0.4, 1]);
 
-  const online =
-    conversation.type === 'direct' &&
-    conversation.peer &&
-    (presence[conversation.peer._id] ?? conversation.peer.presence === 'online');
+  const online = !!peerId && (peerOnline || conversation.peer.presence === 'online');
 
   const unread = conversation.unreadCount || 0;
   const mentions = conversation.mentionCount || 0;
@@ -149,12 +157,17 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
         </motion.span>
       </div>
 
+      {/* `layout` used to be on this element. Framer's layout animation measures
+          every row on every commit, so one chat's unread count changing forced a
+          full-list measure-and-reflow — which is precisely what made scrolling
+          the list stutter. The enter and exit fades are kept because they are
+          composited and cost nothing; the reordering is now instant, which on a
+          list sorted by recency is what you want anyway. */}
       <motion.div
-        layout
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0, height: 0 }}
-        transition={{ type: 'spring', damping: 32, stiffness: 420 }}
+        transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
         drag="x"
         dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.2}
@@ -180,16 +193,16 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
         }}
         onPointerUp={() => clearTimeout(pressTimer.current)}
         onPointerLeave={() => clearTimeout(pressTimer.current)}
-        onClick={() => !swiping && onOpen()}
+        onClick={() => !swiping && onOpen(conversation._id)}
         onContextMenu={(e) => {
           e.preventDefault();
           openMenu(e.clientX, e.clientY);
         }}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => e.key === 'Enter' && onOpen()}
+        onKeyDown={(e) => e.key === 'Enter' && onOpen(conversation._id)}
         className={cn(
-          'relative flex cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors sm:px-4',
+          'list-row relative flex cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors sm:px-4',
           active ? 'bg-surface-3' : 'bg-surface hover:bg-surface-2 active:bg-surface-3'
         )}
       >
@@ -295,6 +308,42 @@ export function ChatRow({ conversation, active, currentUserId, onOpen, showDivid
     </div>
   );
 }
+
+/**
+ * Only re-render when this row's own inputs change.
+ *
+ * The store hands out a fresh `conversations` array on every patch, so without
+ * this every row re-rendered whenever any row's unread count moved. The
+ * comparison is field-by-field rather than a shallow object check for the same
+ * reason: `patchConversation` maps the array and produces a new object for the
+ * chat it touched, so identity is never stable even for rows that did not change.
+ */
+const ChatRow = memo(ChatRowBase, (a, b) => {
+  if (a.active !== b.active || a.showDivider !== b.showDivider) return false;
+  if (a.currentUserId !== b.currentUserId || a.onOpen !== b.onOpen) return false;
+
+  const x = a.conversation;
+  const y = b.conversation;
+  return (
+    x._id === y._id &&
+    x.name === y.name &&
+    x.avatar === y.avatar &&
+    x.unreadCount === y.unreadCount &&
+    x.mentionCount === y.mentionCount &&
+    x.lastMessageAt === y.lastMessageAt &&
+    /* Identity, not id. The row draws a receipt tick and a deleted-message
+       placeholder out of this object, so comparing ids would hold a stale tick
+       on screen the moment anything ever starts refreshing receipts in place.
+       The store only replaces `lastMessage` when it genuinely changed. */
+    x.lastMessage === y.lastMessage &&
+    x.muted === y.muted &&
+    x.pinned === y.pinned &&
+    x.archived === y.archived &&
+    x.peer?.presence === y.peer?.presence
+  );
+});
+
+export { ChatRow };
 
 export function ReceiptTick({ status, className }) {
   if (status === 'read') {

@@ -17,6 +17,7 @@ import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
 import { ReplyPanel } from './ReplyPanel';
 import { FirstContactBanner } from './ScamWarning';
+import { SaveContactBar } from './SaveContactBar';
 import { SystemMessage } from './SystemMessage';
 import { TypingBubble } from './TypingBubble';
 import { MessageActions } from './MessageActions';
@@ -135,23 +136,19 @@ export function Thread({ conversationId }) {
   const days = useMemo(() => groupByDay(withGrouping(list)), [list]);
   const typingNames = Object.values(typing || {});
 
-  if (!conversation) {
-    return (
-      <div className={cn('chat-canvas flex h-full w-full flex-col', canvas)}>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-line border-t-brand" />
-        </div>
-      </div>
-    );
-  }
-
   /* Only asked for when the banner will show, so an established chat costs no
-     request at all. */
+     request at all.
+
+     Above the `if (!conversation)` bail-out, and it has to stay there. It used
+     to sit below it, which meant the first render — before the conversation had
+     arrived — ran fewer hooks than the second, and React tears the whole
+     subtree down when the count changes. That is what made an opened chat go
+     blank: not a missing conversation, a hook order that changed underneath it. */
   useEffect(() => {
     const peerId = conversation?.peer?._id;
     if (conversation?.type !== 'direct' || !conversation.neverReplied || !peerId) {
       setReputation(null);
-      return;
+      return undefined;
     }
 
     let cancelled = false;
@@ -165,8 +162,27 @@ export function Thread({ conversationId }) {
     };
   }, [conversation?.peer?._id, conversation?.type, conversation?.neverReplied]);
 
+  if (!conversation) {
+    return (
+      <div className={cn('chat-canvas flex h-full w-full flex-col', canvas)}>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-line border-t-brand" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn('chat-canvas relative flex h-full min-h-0 w-full flex-col overflow-hidden', canvas)}>
+    <div
+      className={cn(
+        /* `pane-enter` is a CSS keyframe rather than a framer-motion variant on
+           purpose: it runs on the first frame after the route mounts, which is
+           the frame where hydrating a motion component is most expensive, and an
+           entrance that stutters is worse than no entrance at all. */
+        'chat-canvas pane-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden',
+        canvas
+      )}
+    >
       <AnimatePresence mode="wait" initial={false}>
         {searchOpen ? (
           <ThreadSearch key="search" conversation={conversation} />
@@ -186,7 +202,7 @@ export function Thread({ conversationId }) {
         ref={scrollRef}
         onScroll={onScroll}
         data-private
-        className="scroll-soft relative z-[1] min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+        className="scroll-soft scroll-layer relative z-[1] min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
       >
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end pb-2 pt-3">
           {/* Encryption notice at the very top of a conversation. Green rather
@@ -281,6 +297,8 @@ export function Thread({ conversationId }) {
       </AnimatePresence>
 
       <div ref={composerRef} className="shrink-0">
+        {/* Inside the measured block, so the jump-to-latest button clears it. */}
+        {selection.length === 0 && <SaveContactBar conversation={conversation} />}
         {selection.length > 0 ? (
           <SelectionBar conversation={conversation} />
         ) : (

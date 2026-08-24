@@ -13,7 +13,10 @@
     "test:features": "node scripts/feature-test.mjs",
     "test:forensics": "node scripts/forensics.test.mjs && node scripts/reconcile.test.mjs",
     "verify-export": "node scripts/verify-export.mjs",
-    "reconcile": "node scripts/reconcile-exports.mjs"
+    "reconcile": "node scripts/reconcile-exports.mjs",
+    "test:contacts": "node scripts/contacts.test.mjs",
+    "test:push": "node scripts/pushdelivery.test.mjs",
+    "test": "npm run test:forensics && npm run test:contacts && npm run test:push"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

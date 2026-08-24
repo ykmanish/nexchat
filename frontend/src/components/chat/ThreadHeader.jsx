@@ -26,6 +26,7 @@ import { useUI } from '@/store/ui';
 import { lastSeenLabel, cn } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 import { emitAsync } from '@/lib/socket';
+import { saveContactMenuItem } from './SaveContactBar';
 
 export function ThreadHeader({ conversation, onBack }) {
   const presence = useChat((s) => s.presence);
@@ -143,6 +144,11 @@ export function ThreadHeader({ conversation, onBack }) {
             icon: Info,
             onClick: () => openSheet('chatInfo', { conversation }),
           },
+          /* Second, not buried: the menu is where somebody who dismissed the
+             bar above the composer will come looking for it. `filter` drops the
+             null this returns for a group, where there is no single person to
+             save. */
+          ...[saveContactMenuItem(conversation)].filter(Boolean),
           { label: 'Search in chat', icon: Search, onClick: openSearch },
           {
             label: conversation.muted ? 'Unmute' : 'Mute notifications',

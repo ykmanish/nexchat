@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Sheet, ConfirmDialog } from '@/components/ui/Sheet';
 import { ListButton, Button } from '@/components/ui/Button';
+import { saveContactMenuItem } from '@/components/chat/SaveContactBar';
 import { Switch, RadioRow } from '@/components/ui/Field';
 import { Avatar } from '@/components/ui/Avatar';
 import { useChat } from '@/store/chat';
@@ -57,6 +58,8 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
   const [busy, setBusy] = useState(false);
 
   const isDirect = conversation?.type === 'direct';
+
+  const contactAction = saveContactMenuItem(conversation);
   const isAdmin = conversation?.isAdmin;
 
   useEffect(() => {
@@ -297,6 +300,20 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
                     label="Leave"
                     danger
                     onClick={() => setConfirm('leave')}
+                  />
+                  <div className="divider mx-5" />
+                </>
+              )}
+              {isDirect && contactAction && (
+                <>
+                  {/* Above Block, not beside it. This screen is where somebody
+                      goes to find out who they are talking to, and "save them"
+                      is the constructive half of that decision — burying it
+                      under the destructive one gets the emphasis backwards. */}
+                  <ListButton
+                    icon={contactAction.icon}
+                    label={contactAction.label}
+                    onClick={contactAction.onClick}
                   />
                   <div className="divider mx-5" />
                 </>

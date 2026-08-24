@@ -18,6 +18,7 @@ import { SheetHost } from '@/components/modals/SheetHost';
 import { CallOverlay } from '@/components/chat/CallOverlay';
 import { Lightbox } from '@/components/chat/Lightbox';
 import { TiltCurtain } from '@/components/chat/TiltCurtain';
+import { ShakeSosGuard } from '@/components/chat/ShakeSosGuard';
 
 /**
  * One shell for both layouts. Below `lg` it is a single stacked column with a
@@ -213,6 +214,11 @@ export function AppShell({ children }) {
       <CallOverlay />
       <Lightbox />
       <TiltCurtain />
+      {/* Armed only while signed in and unlocked — the same reasoning as the
+          flip gesture. There is nothing to send from behind a lock screen, and
+          a shake while the phone is in a pocket with the app locked is far more
+          likely to be a bus than an emergency. */}
+      <ShakeSosGuard armed />
     </div>
   );
 }

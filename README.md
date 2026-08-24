@@ -73,6 +73,27 @@ then, in another terminal:
 cd backend && npm run smoke server.log
 ```
 
+### 4. Test suites
+
+Neither of these needs a server or a database of its own — the API ones boot the
+app in-process against the in-memory Mongo, and the web ones drive the modules
+under test directly with synthetic input.
+
+```bash
+cd backend && npm test
+```
+
+Forensic export verification, contact reachability (that somebody who added you
+is reachable from New chat), and push delivery (that a backgrounded device is
+still pushed to).
+
+```bash
+cd frontend && npm test
+```
+
+The flip, tilt and shake gesture state machines against synthetic accelerometer
+data, on-device scam detection, and the view-once capture guard.
+
 ---
 
 ## How the encryption works
@@ -136,6 +157,25 @@ playback, a swipe-to-dismiss lightbox.
 **Realtime** — typing and recording indicators, presence, delivered/read receipts,
 per-device fan-out, offline queue that flushes on reconnect, gap-filling sync.
 
+**Notifications** — Web Push to every device that is not currently on screen.
+A connected socket is *not* treated as proof the message was seen: a backgrounded
+phone keeps its websocket while the browser freezes the tab, so clients report
+their visibility and a hidden device gets a push like a disconnected one. Sent at
+high urgency, because Web Push defaults to normal and both FCM and APNs batch
+that. Optional "someone is typing" notices, off by default. A **Send a test**
+button on the notifications screen exercises the whole chain — VAPID keys, push
+service, subscription, service worker — rather than just proving the browser can
+draw a notification.
+
+**Contacts** — a contact is one-directional, so New chat also lists people who
+added *you* and people you already share a chat with, each with a one-tap save.
+A chat with someone unsaved carries a save-contact bar above the composer.
+
+**Safety** — on-device scam detection, community scam reports, an emergency share
+that sends your live location to chosen contacts as ordinary encrypted messages,
+a shake gesture to raise it without looking at the screen (five-second countdown,
+cancelled by any tap), flip-to-hide, tilt-to-read, and app lock.
+
 **Calls** — 1:1 voice and video over WebRTC with in-app signalling; media is
 peer-to-peer and never touches the server.
 
@@ -173,6 +213,13 @@ Socket.IO carries `message:send`, `message:delivered`, `message:read`,
 ## Before deploying
 
 - Replace both JWT secrets with real random values.
+- **Set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`.** Left blank, the server
+  mints a pair at boot and notifications work — until the next restart, at which
+  point every stored subscription is signed against a key the push service no
+  longer accepts. Delivery stops, clients still believe they are subscribed, and
+  nothing appears in any log. Generate a pair with
+  `npx web-push generate-vapid-keys`; the notifications screen warns while the
+  keys are temporary.
 - Put uploads on object storage — the local `uploads/` directory does not survive
   a container restart and will not scale past one instance.
 - Add a TURN server; STUN alone fails behind symmetric NAT.

@@ -17,6 +17,11 @@ const settingsSchema = new mongoose.Schema(
       reactions: { type: Boolean, default: true },
       calls: { type: Boolean, default: true },
       previews: { type: Boolean, default: true },
+      /* "X is typing" while your phone is locked. Off by default and it should
+         stay that way: it is a notification for something that has not been
+         said yet, which some people find useful and others find intrusive, so
+         it is opt-in rather than a surprise. */
+      typing: { type: Boolean, default: false },
     },
   },
   { _id: false }

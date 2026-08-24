@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, EyeOff, ShieldAlert } from 'lucide-react';
 import { useUI, toast } from '@/store/ui';
 import { useDecryptedMedia } from './Attachment';
 import { IconButton } from '@/components/ui/Button';
 import { feedback } from '@/lib/sound';
+import { arm as armCaptureGuard, CAPTURE_CAVEAT } from '@/lib/captureguard';
 
 /** Full-screen media viewer with swipe-to-dismiss. */
 export function Lightbox() {
@@ -29,6 +30,19 @@ export function Lightbox() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [lightbox, close]);
+
+  /* Armed for view-once media only.
+     Not for everything: the guard blacks the screen out whenever focus is lost,
+     which is the right trade for a photo that can be opened exactly once and
+     wrong for an ordinary picture somebody may well want to keep. Scoping it
+     here means the aggressive behaviour applies precisely where the sender was
+     promised it would. */
+  const guarded = (lightbox?.items || []).some((i) => i?.viewOnce);
+
+  useEffect(() => {
+    if (!guarded) return undefined;
+    return armCaptureGuard();
+  }, [guarded]);
 
   if (typeof document === 'undefined') return null;
 
@@ -52,12 +66,27 @@ export function Lightbox() {
               className="text-white hover:bg-white/10"
             />
             <span className="text-[13px] font-medium text-white/70">
-              {items.length > 1 ? index + 1 + ' of ' + items.length : ''}
+              {guarded
+                ? 'View once'
+                : items.length > 1
+                  ? index + 1 + ' of ' + items.length
+                  : ''}
             </span>
-            <DownloadButton attachment={current} />
+            {/* Offering "save" on a photo that exists for one viewing would be
+                absurd, and the button was there. */}
+            {guarded ? (
+              <span className="grid h-10 w-10 place-items-center text-white/50">
+                <EyeOff size={18} />
+              </span>
+            ) : (
+              <DownloadButton attachment={current} />
+            )}
           </header>
 
-          <div className="relative flex min-h-0 flex-1 items-center justify-center">
+          <div
+            className="relative flex min-h-0 flex-1 items-center justify-center"
+            {...(guarded ? { 'data-capture-guard': '' } : {})}
+          >
             <AnimatePresence mode="wait">
               <LightboxItem key={index} attachment={current} onClose={close} />
             </AnimatePresence>
@@ -90,7 +119,19 @@ export function Lightbox() {
             )}
           </div>
 
-          {items.length > 1 && (
+          {/* Said plainly rather than implied. A guard that claims more than it
+              can do is worse than none — somebody deciding whether to send a
+              photo needs to know a camera pointed at the screen still works. */}
+          {guarded && (
+            <div className="safe-bottom px-6 pb-4 pt-3">
+              <p className="mx-auto flex max-w-[420px] items-start gap-2 text-[11.5px] leading-relaxed text-white/55">
+                <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+                {CAPTURE_CAVEAT}
+              </p>
+            </div>
+          )}
+
+          {items.length > 1 && !guarded && (
             <div className="safe-bottom flex justify-center gap-1.5 py-4">
               {items.map((_, i) => (
                 <button
@@ -152,8 +193,10 @@ function LightboxItem({ attachment, onClose }) {
       src={url}
       onError={dropPreview}
       alt={attachment.name || 'Photo'}
-      className="max-h-full max-w-full object-contain"
+      className="max-h-full max-w-full select-none object-contain"
       draggable={false}
+      // A long-press "save image" is the easy way around all of this on a phone.
+      onContextMenu={attachment.viewOnce ? (e) => e.preventDefault() : undefined}
     />
   );
 }

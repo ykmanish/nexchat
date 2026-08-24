@@ -19,6 +19,7 @@ export function Providers({ children }) {
       <SocketBridge />
       <AppearanceBridge />
       <AudioUnlock />
+      <PushBridge />
       {children}
       <ToastStack />
     </ThemeProvider>
@@ -107,15 +108,25 @@ function SessionBridge() {
 /** Every realtime event in the app lands here and is routed into the stores. */
 function SocketBridge() {
   const status = useAuth((s) => s.status);
-  const user = useAuth((s) => s.user);
+  const userId = useAuth((s) => s.user?._id);
 
   useEffect(() => {
-    if (status !== 'authed' || !user) return undefined;
+    if (status !== 'authed' || !userId) return undefined;
 
     const socket = getSocket() || connectSocket();
     if (!socket) return undefined;
 
     const chat = () => useChat.getState();
+
+    /* Read live rather than captured.
+       This effect used to depend on the whole `user` object, so every settings
+       toggle — every mute, every theme change — produced a new identity, tore
+       down all forty socket listeners and re-registered them. Events arriving
+       during that gap were dropped on the floor, which is a plausible cause of a
+       message that never appeared until a reload. Depending on the id alone
+       fixes that, and the handlers read the current user through the store so
+       they still see fresh settings. */
+    const me = () => useAuth.getState().user || { _id: userId };
 
     const handlers = {
       ready: ({ onlineUsers }) => {
@@ -127,31 +138,31 @@ function SocketBridge() {
       },
 
       'message:new': async ({ conversationId, message }) => {
-        const isMine = String(message.sender?._id || message.sender) === String(user._id);
+        const isMine = String(message.sender?._id || message.sender) === String(me()._id);
         const isActive = chat().activeId === conversationId;
 
         await chat().receiveMessage({ conversationId, message });
 
         if (!isMine) {
           const conv = chat().conversations.find((c) => c._id === conversationId);
-          if (audible(conv, message) && user.settings?.sounds !== false) {
+          if (audible(conv, message) && me().settings?.sounds !== false) {
             feedback(message.mentionedMe ? 'mention' : 'receive');
           }
-          if (!isActive && audible(conv, message)) notify(conv, message, user);
+          if (!isActive && audible(conv, message)) notify(conv, message, me());
         }
       },
 
       /* A reply lands in its panel and bumps the root's counter; it must not
          appear in the timeline, which is what threads are for. */
       'message:thread-reply': async ({ conversationId, message, threadRoot }) => {
-        const isMine = String(message.sender?._id || message.sender) === String(user._id);
+        const isMine = String(message.sender?._id || message.sender) === String(me()._id);
 
         await chat().decrypt(message);
         chat().receiveThreadReply(conversationId, threadRoot, message);
 
         if (!isMine) {
           const conv = chat().conversations.find((c) => c._id === conversationId);
-          if (audible(conv, message) && user.settings?.sounds !== false) {
+          if (audible(conv, message) && me().settings?.sounds !== false) {
             feedback(message.mentionedMe ? 'mention' : 'receive');
           }
         }
@@ -209,7 +220,7 @@ function SocketBridge() {
 
       'message:reaction': ({ conversationId, messageId, reactions, by }) => {
         chat().applyMessagePatch(conversationId, messageId, { reactions });
-        if (String(by) !== String(user._id)) feedback('react');
+        if (String(by) !== String(me()._id)) feedback('react');
       },
 
       'message:delivered': ({ conversationId, messageIds, userId, deliveredAt }) => {
@@ -283,7 +294,7 @@ function SocketBridge() {
         // A thread reply does not move the chat in the list — see the server
         // side of this in createMessage.
         const patch = isThreadReply ? {} : { lastMessageAt };
-        if (String(senderId) !== String(user._id)) {
+        if (String(senderId) !== String(me()._id)) {
           if (!isThreadReply) patch.unreadCount = unreadCount;
           if (mentionCount !== undefined) patch.mentionCount = mentionCount;
         }
@@ -293,7 +304,7 @@ function SocketBridge() {
         chat().patchConversation(conversationId, { unreadCount: 0, mentionCount: 0 }),
 
       'conversation:banned': ({ conversationId, userId: banned }) => {
-        if (String(banned) === String(user._id)) return; // handled below
+        if (String(banned) === String(me()._id)) return; // handled below
         useChat.setState((s) => ({
           conversations: s.conversations.map((c) =>
             c._id === conversationId
@@ -322,6 +333,13 @@ function SocketBridge() {
       'device:revoked': () => {
         useUI.getState().toast('This device was signed out.', { type: 'error' });
         useAuth.getState().logout();
+      },
+
+      /* Somebody added or removed this account, or another of our own devices
+         did. Either way the three groups New chat renders from are stale, and
+         re-deriving them is a single request. */
+      'contacts:changed': () => {
+        chat().loadContacts({ force: true }).catch(() => {});
       },
 
       'user:updated': ({ user: updated }) => {
@@ -362,7 +380,50 @@ function SocketBridge() {
     return () => {
       Object.entries(handlers).forEach(([event, fn]) => socket.off(event, fn));
     };
-  }, [status, user]);
+  }, [status, userId]);
+
+  return null;
+}
+
+/**
+ * Keeps this device's push subscription alive, and listens to the worker.
+ *
+ * Two things go wrong quietly without it. Chrome rotates push subscriptions on
+ * its own schedule and the old endpoint then stops delivering with no error
+ * anywhere — the user's experience is that notifications worked for a week and
+ * then stopped, and the only known cure was toggling the setting off and on.
+ * And a worker that re-subscribes while no tab is listening has nowhere to send
+ * the new endpoint. Reconciling on launch covers the first; the message
+ * listener covers the second.
+ */
+function PushBridge() {
+  const status = useAuth((s) => s.status);
+
+  useEffect(() => {
+    if (status !== 'authed') return undefined;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return undefined;
+
+    let cancelled = false;
+
+    import('@/lib/push').then(({ reconcileSubscription }) => {
+      if (!cancelled) reconcileSubscription().catch(() => {});
+    });
+
+    const onMessage = (event) => {
+      const payload = event.data;
+      if (payload?.kind === 'resubscribed' && payload.subscription) {
+        import('@/lib/push').then(({ adoptSubscription }) =>
+          adoptSubscription(payload.subscription)
+        );
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => {
+      cancelled = true;
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+    };
+  }, [status]);
 
   return null;
 }
@@ -400,22 +461,60 @@ function audible(conversation, message) {
   return conversation.muteMode === 'mentions' && !!message.mentionedMe;
 }
 
-function notify(conversation, message, user) {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
+/**
+ * Raises a notification for a message that arrived over the socket.
+ *
+ * This used to call `new Notification(...)`, which is the single most common way
+ * to ship a messenger with no notifications on a phone: Android Chrome throws
+ * `Illegal constructor` for that API and insists on
+ * `ServiceWorkerRegistration.showNotification` instead. The throw landed in a
+ * silent catch, so on a desktop it worked, on a phone nothing happened, and
+ * nothing was logged either way.
+ *
+ * The visibility test also had to change. `visibilityState` is `visible` for a
+ * tab sitting behind another window, so a message that arrived while you were
+ * in a different app was dropped on the floor for being "on screen".
+ */
+async function notify(conversation, message, user) {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
   if (Notification.permission !== 'granted') return;
-  if (document.visibilityState === 'visible') return;
   if (user.settings?.notifications?.messages === false) return;
+
+  // Being on screen *and* focused is what makes a notification redundant.
+  const attentive =
+    document.visibilityState === 'visible' &&
+    (typeof document.hasFocus !== 'function' || document.hasFocus());
+  if (attentive) return;
 
   const showPreview = user.settings?.notifications?.previews !== false;
   const title = conversation?.name || message.sender?.name || 'New message';
+  const options = {
+    body: showPreview
+      ? message.mentionedMe
+        ? 'Mentioned you'
+        : 'Sent you a message'
+      : 'New message',
+    icon: '/icon-192.png',
+    badge: '/icon-96.png',
+    tag: 'chat-' + String(message.conversation),
+    renotify: true,
+    data: { conversationId: String(message.conversation) },
+  };
 
   try {
-    const n = new Notification(title, {
-      body: showPreview ? 'Sent you a message' : 'New message',
-      icon: '/icon-192.png',
-      tag: String(message.conversation),
-      silent: true,
-    });
+    const registration =
+      'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/sw.js') : null;
+
+    if (registration) {
+      // The worker's notificationclick handler focuses the right chat, so this
+      // path needs no onclick of its own.
+      await registration.showNotification(title, options);
+      return;
+    }
+
+    // Desktop browsers without a worker registered still support the
+    // constructor, so it stays as the fallback rather than the default.
+    const n = new Notification(title, { ...options, silent: true });
     n.onclick = () => {
       window.focus();
       n.close();

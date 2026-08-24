@@ -29,13 +29,61 @@ export function connectSocket(accessToken) {
 
   // Anything queued while offline goes out the moment we reconnect.
   socket.on('connect', () => {
+    reportVisibility();
     while (pending.length) {
       const { event, payload, ack } = pending.shift();
       socket.emit(event, payload, ack);
     }
   });
 
+  watchVisibility();
   return socket;
+}
+
+/**
+ * Tells the server whether this tab is on screen.
+ *
+ * The server decides whether to send a push from this. Holding a socket is not
+ * the same as being looked at: a phone with the app in the background keeps its
+ * websocket for as long as the OS allows, so it counted as connected, the
+ * message went over the socket into a frozen tab that drew nothing, and no
+ * notification was sent. Saying "I am hidden" is what makes the push arrive.
+ *
+ * `pagehide` is included because iOS does not reliably fire `visibilitychange`
+ * when an app is swiped away, and a device stuck in a phantom foreground state
+ * is one that silently stops notifying.
+ */
+let visibilityWatched = false;
+
+/**
+ * Focus counts, not just visibility.
+ *
+ * A desktop tab that is open behind another window is `visible` as far as the
+ * Page Visibility API is concerned, and treating that as "being read" is why a
+ * message arriving while you were in another app produced nothing at all. If
+ * the window does not have focus, nobody is reading it, and a notification is
+ * exactly right.
+ */
+const isAttentive = () =>
+  typeof document !== 'undefined' &&
+  document.visibilityState === 'visible' &&
+  (typeof document.hasFocus !== 'function' || document.hasFocus());
+
+function reportVisibility() {
+  if (typeof document === 'undefined' || !socket?.connected) return;
+  socket.emit('app:visibility', isAttentive() ? 'visible' : 'hidden');
+}
+
+function watchVisibility() {
+  if (visibilityWatched || typeof document === 'undefined') return;
+  visibilityWatched = true;
+
+  document.addEventListener('visibilitychange', reportVisibility);
+  window.addEventListener('pagehide', () => {
+    if (socket?.connected) socket.emit('app:visibility', 'hidden');
+  });
+  window.addEventListener('focus', reportVisibility);
+  window.addEventListener('blur', reportVisibility);
 }
 
 /** Connects without a session — used only by the QR device-link screen. */

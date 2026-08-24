@@ -315,6 +315,74 @@
     background: var(--surface-2);
   }
 
+  /* ── list performance ──
+     Chat rows and message bubbles are the two lists long enough for layout cost
+     to be visible, and both used to be animated by the layout engine on every
+     store change. `contain` tells the browser a row's layout and paint cannot
+     affect anything outside it, so a preview arriving for one chat re-lays out
+     one row rather than the whole column — which is what the scroll jank was.
+
+     No `will-change` here on purpose: promoting hundreds of rows to their own
+     layer costs more memory than it saves, and the transform on the swipe
+     handle is promoted by framer-motion for exactly as long as a drag lasts. */
+  .list-row {
+    contain: layout paint style;
+  }
+
+  /* Rows far off screen are not laid out at all until they approach the
+     viewport. `contain-intrinsic-size` supplies a stand-in height so the
+     scrollbar does not jump around as they materialise. */
+  .list-virtual {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 72px;
+  }
+
+  /* A scroll container that composites on its own, so scrolling a thread does
+     not repaint the header, the composer, or the pane beside it. */
+  .scroll-layer {
+    transform: translateZ(0);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── route transitions ──
+     A short, cheap fade-and-lift for a page that has just mounted. Deliberately
+     CSS rather than framer-motion: this runs on the very first frame of a
+     navigation, which is exactly the frame where hydrating a motion component
+     costs the most, and an animation that stutters on arrival is worse than
+     none. `translateY` and `opacity` only — both composited, neither triggers
+     layout. */
+  .page-enter {
+    animation: page-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 6px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Mobile pane push: a thread arriving over the chat list reads as forward
+     motion, which is what the back gesture then undoes. */
+  .pane-enter {
+    animation: pane-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes pane-enter {
+    from {
+      opacity: 0.6;
+      transform: translate3d(14px, 0, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   /* Anything that floats above the app — sheets, menus, dialogs. */
   .surface-raised {
     background: var(--raised);
@@ -344,6 +412,53 @@
 
   /* Scrolling has to keep working while hidden, so pointer events are left
      alone — the peek control is a real button instead of a hidden tap target. */
+
+  /* ── view-once capture guard ──
+     Anything marked `data-capture-guard` goes solid black the moment a capture
+     is suspected. One class on <html>, for the same reason as the tilt curtain:
+     the signals arrive as focus and key events and re-rendering a decrypted
+     image to react to them would be far more expensive than a class mutation.
+
+     `opacity` is not enough on its own — a screenshot taken mid-transition
+     would still catch a ghost — so the element is painted over by an opaque
+     pseudo-element and its own contents are hidden outright. */
+  [data-capture-guard] {
+    position: relative;
+  }
+
+  .capture-shield [data-capture-guard] > * {
+    visibility: hidden;
+  }
+
+  .capture-shield [data-capture-guard]::after {
+    content: 'Screenshot blocked';
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    background: #000;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+
+  /* "Print to PDF" is a screenshot with extra steps, and `beforeprint` does not
+     fire everywhere — so the stylesheet blacks it out independently. */
+  @media print {
+    [data-capture-guard] > * {
+      visibility: hidden !important;
+    }
+    [data-capture-guard]::after {
+      content: 'Screenshot blocked';
+      position: absolute;
+      inset: 0;
+      background: #000;
+      display: grid;
+      place-items: center;
+      color: #555;
+    }
+  }
 }
 
 /* ═══════════════════════════ chat wallpapers ═══════════════════════════ */

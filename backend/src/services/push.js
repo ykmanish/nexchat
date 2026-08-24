@@ -2,10 +2,13 @@ import webpush from 'web-push';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { Device } from '../models/Device.js';
+import { User } from '../models/User.js';
 import { presence } from './presence.js';
 
 let ready = false;
 let publicKey = null;
+/** True when the keys were minted at boot rather than configured. */
+let ephemeral = false;
 
 /**
  * Web Push delivery for devices that are not currently holding a socket.
@@ -19,14 +22,25 @@ export function initPush() {
   let { publicKey: pub, privateKey: priv } = env.push;
 
   if (!pub || !priv) {
-    // Without keys nothing can be delivered, so mint a pair and tell the
-    // operator to persist them — regenerating invalidates every subscription.
+    /* Without keys nothing can be delivered, so mint a pair and tell the
+       operator to persist them.
+
+       This is worth being loud about, because the failure it causes is
+       invisible from both ends. A browser subscribes against the public key it
+       was handed; restart the server with a fresh pair and every stored
+       subscription is signed by a key the push service no longer accepts.
+       Delivery stops, the client still believes it is subscribed, and the
+       symptom reported is "notifications just stopped working" with nothing in
+       any log to explain it. So the state is also reported to the client, which
+       says so on the notifications screen rather than claiming push is on. */
     const generated = webpush.generateVAPIDKeys();
     pub = generated.publicKey;
     priv = generated.privateKey;
+    ephemeral = true;
 
-    logger.warn('No VAPID keys configured — generated a temporary pair.');
-    logger.warn('Add these to backend/.env so subscriptions survive a restart:');
+    logger.warn('No VAPID keys configured — generated a TEMPORARY pair.');
+    logger.warn('Push will work until this process restarts, then every');
+    logger.warn('subscription silently stops delivering. Put these in .env:');
     logger.warn('  VAPID_PUBLIC_KEY=' + pub);
     logger.warn('  VAPID_PRIVATE_KEY=' + priv);
   }
@@ -44,6 +58,7 @@ export function initPush() {
 
 export const pushPublicKey = () => publicKey;
 export const pushReady = () => ready;
+export const pushEphemeral = () => ephemeral;
 
 /** Removes a subscription the browser has permanently rejected. */
 async function dropSubscription(deviceId) {
@@ -51,14 +66,31 @@ async function dropSubscription(deviceId) {
 }
 
 /**
- * Notifies one user's devices, skipping any that already have a live socket —
- * those got the message over the websocket and would double-notify.
+ * Notifies one user's devices.
+ *
+ * Only devices that are *both* connected and on screen are skipped. That
+ * distinction is the whole fix for "notifications do not arrive": a phone with
+ * the app in the background keeps its websocket for as long as the OS lets it,
+ * so it used to count as connected and got nothing — while the browser had
+ * frozen the tab and rendered none of the socket traffic. The message then
+ * appeared the instant you opened the app, which reads as a notification that
+ * never came rather than one that was suppressed on purpose.
+ *
+ * `urgency: 'high'` matters as much. Web Push defaults to normal urgency, and
+ * both FCM and APNs deliberately batch normal-priority messages to save
+ * battery — minutes late is within spec. A chat message is the canonical case
+ * for high, which is delivered immediately and is what every other messenger
+ * asks for.
+ *
+ * `topic` lets the push service collapse an undelivered notification rather
+ * than queue five of them: a phone that comes back after ten messages should
+ * ring once, not ten times.
  */
-export async function pushToUser(userId, payload, { skipDeviceIds = [] } = {}) {
+export async function pushToUser(userId, payload, { skipDeviceIds = [], urgency = 'high' } = {}) {
   if (!ready) return 0;
 
-  const connected = new Set(presence.devicesOf(userId));
-  skipDeviceIds.forEach((d) => connected.add(d));
+  const skip = new Set(presence.attentiveDevicesOf(userId));
+  skipDeviceIds.forEach((d) => skip.add(String(d)));
 
   const devices = await Device.find({
     user: userId,
@@ -68,16 +100,22 @@ export async function pushToUser(userId, payload, { skipDeviceIds = [] } = {}) {
     .select('deviceId pushSubscription')
     .lean();
 
-  const targets = devices.filter((d) => !connected.has(d.deviceId));
+  const targets = devices.filter((d) => !skip.has(String(d.deviceId)));
   if (!targets.length) return 0;
 
   const body = JSON.stringify(payload);
+  const options = {
+    TTL: payload.type === 'typing' ? 30 : 60 * 60,
+    urgency,
+    ...(collapseKey(payload) ? { topic: collapseKey(payload) } : {}),
+  };
+
   let sent = 0;
 
   await Promise.all(
     targets.map(async (device) => {
       try {
-        await webpush.sendNotification(device.pushSubscription, body, { TTL: 60 * 60 });
+        await webpush.sendNotification(device.pushSubscription, body, options);
         sent += 1;
       } catch (err) {
         // 404/410 mean the browser threw the subscription away for good.
@@ -93,10 +131,79 @@ export async function pushToUser(userId, payload, { skipDeviceIds = [] } = {}) {
   return sent;
 }
 
+/**
+ * Per-conversation collapse key.
+ *
+ * Must be URL-safe base64 of at most 32 characters — the spec is strict and a
+ * rejected topic fails the whole send, so a Mongo id is hashed down rather than
+ * used raw. Typing and message notices get different keys: a typing notice must
+ * never replace an undelivered message.
+ */
+function collapseKey(payload) {
+  if (!payload?.conversationId) return null;
+  const seed = (payload.type === 'typing' ? 't' : 'm') + payload.conversationId;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  }
+  return (payload.type === 'typing' ? 'typ' : 'msg') + Math.abs(hash).toString(36);
+}
+
+/**
+ * A notification the user asked for, to prove the pipeline works end to end.
+ *
+ * Deliberately ignores the skip list. The point is to test *this* device's
+ * subscription while the settings screen is open in front of you, and the
+ * settings screen is by definition in the foreground — the ordinary rules would
+ * suppress the one notification you are trying to see.
+ */
+export async function pushTest(userId, deviceId) {
+  if (!ready) return { sent: 0, reason: 'Push is not configured on this server' };
+
+  const device = await Device.findOne({
+    user: userId,
+    deviceId,
+    revokedAt: null,
+  })
+    .select('deviceId pushSubscription')
+    .lean();
+
+  if (!device?.pushSubscription) {
+    return { sent: 0, reason: 'This device has no push subscription yet' };
+  }
+
+  const payload = {
+    type: 'test',
+    title: 'Notifications are working',
+    body: 'This is a test from Chax. Real alerts say who wrote to you.',
+    at: new Date().toISOString(),
+  };
+
+  try {
+    await webpush.sendNotification(device.pushSubscription, JSON.stringify(payload), {
+      TTL: 60,
+      urgency: 'high',
+    });
+    return { sent: 1 };
+  } catch (err) {
+    if (err.statusCode === 404 || err.statusCode === 410) {
+      await dropSubscription(device.deviceId);
+      return { sent: 0, reason: 'The browser has dropped this subscription — turn push on again' };
+    }
+    return { sent: 0, reason: err.message };
+  }
+}
+
 /* One typing notice per conversation per person per cooldown — otherwise every
-   keystroke burst would ring the recipient's phone. */
+   keystroke burst would ring the recipient's phone.
+
+   Was three minutes, which in practice meant the notice never arrived: by the
+   time it was allowed again the person had long since sent the message and the
+   "is typing" was a lie about the past. Forty seconds is long enough that a
+   paragraph written in bursts rings once, short enough that a second
+   conversation an hour later actually gets one. */
 const typingCooldown = new Map();
-const TYPING_COOLDOWN_MS = 3 * 60 * 1000;
+const TYPING_COOLDOWN_MS = 40 * 1000;
 
 export async function pushTyping({ conversation, sender, recipients }) {
   if (!ready) return;
@@ -123,9 +230,43 @@ export async function pushTyping({ conversation, sender, recipients }) {
     at: new Date().toISOString(),
   };
 
+  /* A muted chat stays quiet while somebody types in it, and so does one whose
+     owner turned typing notices off. Both are decided here rather than in the
+     service worker, which has no idea what the recipient's settings are — and a
+     phone that lights up for a chat you muted is worse than no notice at all. */
   await Promise.all(
-    recipients.map((r) => pushToUser(r.userId, payload).catch(() => 0))
+    recipients.map(async (r) => {
+      const participant = conversation.participantOf?.(r.userId);
+      if (!shouldNotify(participant, { mentioned: false })) return 0;
+      if (!(await wantsTypingNotices(r.userId))) return 0;
+      return pushToUser(r.userId, payload).catch(() => 0);
+    })
   );
+}
+
+/* One lookup per user per minute at most; the setting almost never changes and
+   a typing burst must not turn into a burst of database reads. */
+const typingPrefCache = new Map();
+const TYPING_PREF_TTL_MS = 60 * 1000;
+
+async function wantsTypingNotices(userId) {
+  const key = String(userId);
+  const hit = typingPrefCache.get(key);
+  if (hit && Date.now() - hit.at < TYPING_PREF_TTL_MS) return hit.value;
+
+  const user = await User.findById(key).select('settings.notifications').lean().catch(() => null);
+  // Off by default: a notification for something that is not a message yet has
+  // to be asked for, not assumed.
+  const value = user?.settings?.notifications?.typing === true;
+
+  typingPrefCache.set(key, { value, at: Date.now() });
+  if (typingPrefCache.size > 5000) typingPrefCache.clear();
+  return value;
+}
+
+/** Called when the setting is written, so a flip takes effect immediately. */
+export function forgetTypingPreference(userId) {
+  typingPrefCache.delete(String(userId));
 }
 
 /**

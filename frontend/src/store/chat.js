@@ -38,16 +38,146 @@ export const useChat = create((set, get) => ({
   showArchived: false,
   search: '',
 
+  /* People this account can start a chat with. Cached here rather than fetched
+     by whichever sheet happens to be open, so the list is on screen instantly
+     the second time and a failed request cannot silently empty it. */
+  contacts: [],
+  addedYou: [],
+  messaged: [],
+  contactsLoaded: false,
+
   /* ────────────────────────── conversations ────────────────────────── */
 
+  /**
+   * Loads one scope of the conversation list — archived or not.
+   *
+   * This is where chats disappeared from, and it took three separate mistakes to
+   * do it. Three callers ask for this list independently — the shell on sign-in,
+   * the list pane when the archived view flips, device sync when the tab regains
+   * focus — and none of them knows about the others.
+   *
+   * The wholesale replace was the first mistake. `set({ conversations: data })`
+   * meant a request for the *archive* left the store holding nothing but archived
+   * rows, which the visible filter then rejected: an empty inbox, no error, and
+   * nothing in flight to put it right. The merge below only ever replaces rows
+   * belonging to the scope that was asked for.
+   *
+   * The second was out-of-order replies. A slow answer for a scope could land
+   * after a fast one and reinstate rows that had just been superseded, so each
+   * scope carries a counter and a reply that is not the newest is dropped.
+   *
+   * The third was simply doing it four times on a cold start — twice per caller,
+   * because development double-invokes effects. Sharing one promise per scope
+   * collapses that into a single request without any caller having to coordinate.
+   */
   async loadConversations({ archived = false } = {}) {
-    const { data } = await api.get('/conversations', { params: { archived } });
-    set({ conversations: data.conversations, loaded: true, showArchived: archived });
+    const scope = archived ? 'archived' : 'inbox';
+    if (listInFlight[scope]) return listInFlight[scope];
 
-    // Warm the cache so the list previews render instantly.
-    const lastMessages = data.conversations.map((c) => c.lastMessage).filter(Boolean);
-    get().decryptMany(lastMessages);
-    return data.conversations;
+    const seq = ++loadSeq[scope];
+
+    listInFlight[scope] = api
+      .get('/conversations', { params: { archived } })
+      .then(({ data }) => {
+        // A newer request for this scope is already out; its answer wins.
+        if (seq !== loadSeq[scope]) return get().conversations;
+
+
+        set((s) => {
+          const incoming = data.conversations || [];
+          const fresh = new Set(incoming.map((c) => c._id));
+          // Everything belonging to the *other* scope is kept as-is.
+          const kept = s.conversations.filter(
+            (c) => !!c.archived !== !!archived && !fresh.has(c._id)
+          );
+          return {
+            conversations: sortConversations([...kept, ...incoming]),
+            loaded: true,
+            showArchived: archived,
+          };
+        });
+
+        // Warm the cache so the list previews render instantly.
+        const lastMessages = (data.conversations || []).map((c) => c.lastMessage).filter(Boolean);
+        get().decryptMany(lastMessages);
+        return data.conversations;
+      })
+      .finally(() => {
+        listInFlight[scope] = null;
+      });
+
+    return listInFlight[scope];
+  },
+
+  /* ────────────────────────── contacts ────────────────────────── */
+
+  /**
+   * Refreshes the three groups of reachable people.
+   *
+   * `force` exists because the common case — opening New chat — should show the
+   * cached list at once and quietly revalidate behind it, while a socket telling
+   * us a contact list changed should go straight to the network.
+   */
+  async loadContacts({ force = false } = {}) {
+    if (contactsInFlight && !force) return contactsInFlight;
+
+    contactsInFlight = api
+      .get('/users/contacts')
+      .then(({ data }) => {
+        set({
+          contacts: data.contacts || [],
+          addedYou: data.addedYou || [],
+          messaged: data.messaged || [],
+          contactsLoaded: true,
+        });
+        return data;
+      })
+      .finally(() => {
+        contactsInFlight = null;
+      });
+
+    return contactsInFlight;
+  },
+
+  /**
+   * Saves someone to the address book.
+   *
+   * The local move matters as much as the request: `peerIsContact` is what
+   * suppresses the unknown-sender bar and the first-contact warning, and it
+   * arrives on the conversation payload — so without patching it here the bar
+   * would sit there insisting they are a stranger until the next reload.
+   */
+  async saveContact(userId, { name } = {}) {
+    const { data } = await api.post('/users/contacts', { userId });
+    const contact = data.contact;
+
+    set((s) => ({
+      contacts: dedupeById([...s.contacts, contact]),
+      addedYou: s.addedYou.filter((p) => idOf(p) !== String(userId)),
+      messaged: s.messaged.filter((p) => idOf(p) !== String(userId)),
+      conversations: s.conversations.map((c) =>
+        c.type === 'direct' && c.peer && idOf(c.peer) === String(userId)
+          ? { ...c, peerIsContact: true }
+          : c
+      ),
+    }));
+
+    if (!data.already) toast.success((name || contact.name) + ' saved to contacts');
+    return contact;
+  },
+
+  async removeContact(userId) {
+    await api.delete('/users/contacts/' + userId);
+    set((s) => ({
+      contacts: s.contacts.filter((p) => idOf(p) !== String(userId)),
+      conversations: s.conversations.map((c) =>
+        c.type === 'direct' && c.peer && idOf(c.peer) === String(userId)
+          ? { ...c, peerIsContact: false }
+          : c
+      ),
+    }));
+    // It moves into one of the derived groups, and only the server knows which.
+    get().loadContacts({ force: true }).catch(() => {});
   },
 
   upsertConversation(conversation) {
@@ -755,10 +885,31 @@ export const useChat = create((set, get) => ({
       threads: {},
       activeId: null,
       loaded: false,
+      contacts: [],
+      addedYou: [],
+      messaged: [],
+      contactsLoaded: false,
     }),
 }));
 
 /* ────────────────────────────── helpers ────────────────────────────── */
+
+/** Bumped per scope, so a stale reply cannot overwrite a fresher one. */
+const loadSeq = { inbox: 0, archived: 0 };
+/** One shared promise per scope, so overlapping callers make one request. */
+const listInFlight = { inbox: null, archived: null };
+/** Shared promise, so three components opening at once make one request. */
+let contactsInFlight = null;
+
+export const idOf = (person) => String(person?._id || person?.id || person || '');
+
+function dedupeById(list) {
+  const map = new Map();
+  list.filter(Boolean).forEach((p) => map.set(idOf(p), p));
+  return [...map.values()].sort((a, b) =>
+    String(a.name || '').localeCompare(String(b.name || ''))
+  );
+}
 
 let meRef = null;
 export const setMe = (user) => {

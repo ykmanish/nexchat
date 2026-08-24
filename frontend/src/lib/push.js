@@ -88,6 +88,25 @@ export async function disablePush() {
   await api.post('/devices/push-subscription', { subscription: null }).catch(() => {});
 }
 
+/**
+ * What the server can actually deliver.
+ *
+ * `ephemeral` is the one that matters: it means the operator left the VAPID keys
+ * blank, so the server minted a pair at boot. Push works until the process
+ * restarts and then stops delivering with no error on either side — the client
+ * still holds a subscription, the push service just refuses a key it no longer
+ * recognises. Reporting it is the difference between a fixable configuration
+ * problem and a mystery.
+ */
+export async function pushConfig() {
+  try {
+    const { data } = await api.get('/devices/vapid-public-key');
+    return { enabled: !!data.enabled, ephemeral: !!data.ephemeral };
+  } catch {
+    return { enabled: false, ephemeral: false, unreachable: true };
+  }
+}
+
 export async function isSubscribed() {
   if (!pushSupported()) return false;
   try {
@@ -96,4 +115,73 @@ export async function isSubscribed() {
   } catch {
     return false;
   }
+}
+
+/**
+ * Asks the server to push one notification to this device.
+ *
+ * Deliberately a round trip rather than a local `showNotification`. Drawing one
+ * locally proves the browser can render a notification and nothing else, while
+ * every part that actually breaks — VAPID configuration, the push service, an
+ * expired subscription, the worker's push handler — is on the far side of that
+ * call. A test that cannot fail is not a test.
+ */
+export async function sendTestNotification() {
+  if (!pushSupported()) throw new Error('This browser cannot receive push notifications');
+  if (permission() !== 'granted') throw new Error('Allow notifications first');
+  if (!(await isSubscribed())) throw new Error('Turn push on first');
+
+  const { data } = await api.post('/devices/push-test');
+  if (!data.success) throw new Error(data.reason || 'The server could not send it');
+  return data;
+}
+
+/**
+ * Re-registers a subscription the browser rotated while we were away.
+ *
+ * Chrome refreshes push subscriptions periodically and the old endpoint then
+ * stops delivering with no error anywhere — notifications simply stop arriving,
+ * which is indistinguishable from the feature being broken. The worker handles
+ * the case where it happens while a tab is open; this covers the far more
+ * common one, where it happened days ago and is only discovered at launch.
+ */
+export async function reconcileSubscription() {
+  if (!pushSupported()) return false;
+  if (permission() !== 'granted') return false;
+
+  try {
+    const registration =
+      (await navigator.serviceWorker.getRegistration(SW_PATH)) || (await registerServiceWorker());
+    if (!registration) return false;
+
+    await navigator.serviceWorker.ready;
+
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) {
+      // Cheap and idempotent: the server stores it against this device, so a
+      // rotated endpoint is corrected without the user doing anything.
+      await api.post('/devices/push-subscription', { subscription: existing.toJSON() });
+      return true;
+    }
+
+    // Permission is granted but there is no subscription — the browser dropped
+    // it. Re-subscribing needs no prompt, so it can be done quietly.
+    const { data } = await api.get('/devices/vapid-public-key');
+    if (!data.enabled || !data.publicKey) return false;
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(data.publicKey),
+    });
+    await api.post('/devices/push-subscription', { subscription: subscription.toJSON() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Hands the API a subscription the worker minted on its own. */
+export async function adoptSubscription(subscription) {
+  if (!subscription) return;
+  await api.post('/devices/push-subscription', { subscription }).catch(() => {});
 }

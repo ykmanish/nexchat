@@ -76,6 +76,9 @@ export function initSockets(httpServer) {
     conversations.forEach((c) => socket.join('conversation:' + c._id));
 
     const cameOnline = await presence.add(userId, deviceId, socket.id);
+    // Connecting is something a page in the foreground does. Anything else
+    // arrives as an explicit app:visibility.
+    presence.setForeground(deviceId, true);
     logger.socket('connected ' + socket.data.user.name + ' (' + deviceId + ')');
 
     if (cameOnline) {
@@ -94,6 +97,24 @@ export function initSockets(httpServer) {
       conversations: conversations.map((c) => String(c._id)),
       onlineUsers: presence.onlineUserIds(),
       serverTime: new Date(),
+    });
+
+    /**
+     * The client saying whether it is on screen.
+     *
+     * Everything about push delivery hangs off this. A connected socket used to
+     * be taken as proof the message had been seen, but a backgrounded tab holds
+     * its socket while the browser freezes its JavaScript — so the "delivered"
+     * message was rendered by nobody and no push was sent. The client now
+     * reports `visibilitychange`, and a hidden device is pushed to like a
+     * disconnected one.
+     *
+     * A device that never sends this counts as foreground, so an older client
+     * behaves exactly as it did before.
+     */
+    socket.on('app:visibility', (state) => {
+      const visible = state === true || state === 'visible';
+      presence.setForeground(deviceId, visible);
     });
 
     /* ── rooms ── */

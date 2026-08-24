@@ -1,14 +1,33 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, BellRing, MessageSquare, Users, Heart, Phone, EyeOff } from 'lucide-react';
+import {
+  Bell,
+  BellRing,
+  MessageSquare,
+  Users,
+  Heart,
+  Phone,
+  EyeOff,
+  PencilLine,
+  Send,
+  TriangleAlert,
+} from 'lucide-react';
 import { SettingsShell, SettingsGroup, SettingsRow, Divider } from '@/components/layout/SettingsShell';
 import { Switch } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/store/auth';
 import { toast } from '@/store/ui';
 import { sounds, feedback } from '@/lib/sound';
-import { enablePush, disablePush, isSubscribed, pushSupported, permission } from '@/lib/push';
+import {
+  enablePush,
+  disablePush,
+  isSubscribed,
+  pushSupported,
+  permission,
+  sendTestNotification,
+  pushConfig,
+} from '@/lib/push';
 
 export default function NotificationsPage() {
   const user = useAuth((s) => s.user);
@@ -16,6 +35,8 @@ export default function NotificationsPage() {
   const [perm, setPerm] = useState('default');
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [server, setServer] = useState(null);
 
   const notifications = user?.settings?.notifications || {};
   const supported = pushSupported();
@@ -23,6 +44,7 @@ export default function NotificationsPage() {
   useEffect(() => {
     setPerm(permission());
     isSubscribed().then(setSubscribed);
+    pushConfig().then(setServer);
   }, []);
 
   /** Turning this on registers the worker and hands the server a subscription,
@@ -54,11 +76,40 @@ export default function NotificationsPage() {
     }
   }
 
+  /**
+   * Asks the server to push one notification here.
+   *
+   * A local `showNotification` would prove only that this browser can draw a
+   * notification. Everything that actually breaks — the VAPID keys, the push
+   * service, a subscription the browser silently rotated, the worker's push
+   * handler — is on the far side of the round trip, so the test has to make it.
+   */
+  async function runTest() {
+    setTesting(true);
+    try {
+      await sendTestNotification();
+      feedback('success');
+      toast.success('Sent — it should appear within a second or two');
+    } catch (err) {
+      toast.error(err.message || 'Could not send a test notification');
+    } finally {
+      setTesting(false);
+    }
+  }
+
   const rows = [
     { key: 'messages', icon: MessageSquare, label: 'Direct messages' },
     { key: 'groups', icon: Users, label: 'Groups and communities' },
     { key: 'reactions', icon: Heart, label: 'Reactions' },
     { key: 'calls', icon: Phone, label: 'Calls' },
+    {
+      key: 'typing',
+      icon: PencilLine,
+      label: 'Someone is typing',
+      sublabel: 'A quiet nudge before the message lands',
+      // Off by default: this is the one alert for something nobody has said yet.
+      defaultOn: false,
+    },
   ];
 
   return (
@@ -89,19 +140,67 @@ export default function NotificationsPage() {
             </p>
 
             {supported && perm !== 'denied' && (
-              <Button
-                size="sm"
-                className="mt-3"
-                loading={busy}
-                variant={subscribed ? 'secondary' : 'primary'}
-                onClick={subscribed ? turnOffPush : turnOnPush}
-              >
-                {subscribed ? 'Turn off' : 'Turn on push'}
-              </Button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  loading={busy}
+                  variant={subscribed ? 'secondary' : 'primary'}
+                  onClick={subscribed ? turnOffPush : turnOnPush}
+                >
+                  {subscribed ? 'Turn off' : 'Turn on push'}
+                </Button>
+
+                {/* The one honest way to find out whether this works on *this*
+                    phone. Web push has a long chain and every link fails
+                    silently, so guessing is not good enough. */}
+                {subscribed && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={Send}
+                    loading={testing}
+                    onClick={runTest}
+                  >
+                    Send a test
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* A configuration problem, stated where somebody wondering why nothing
+          arrives will actually look. Left unsaid, this presents as "push worked
+          for a day and then stopped" — which is exactly what it is, and exactly
+          what nobody can debug from the outside. */}
+      {server?.ephemeral && (
+        <div className="mb-5 flex items-start gap-3 rounded-2xl bg-warn/10 px-4 py-3.5">
+          <TriangleAlert size={17} className="mt-0.5 shrink-0 text-warn" />
+          <div className="min-w-0">
+            <p className="text-[13.5px] font-semibold">
+              This server has no permanent notification keys
+            </p>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-muted">
+              It generated temporary ones at startup, so notifications will stop the
+              next time it restarts and everyone has to turn push on again. Whoever
+              runs the server needs to set <code className="font-mono">VAPID_PUBLIC_KEY</code>{' '}
+              and <code className="font-mono">VAPID_PRIVATE_KEY</code> — the values are in
+              the startup log.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {server && !server.enabled && !server.unreachable && (
+        <div className="mb-5 flex items-start gap-3 rounded-2xl bg-surface-2 px-4 py-3.5">
+          <TriangleAlert size={17} className="mt-0.5 shrink-0 text-ink-faint" />
+          <p className="text-[12.5px] leading-relaxed text-ink-muted">
+            Push is switched off on this server, so alerts only appear while Chax is
+            open in a tab.
+          </p>
+        </div>
+      )}
 
       <SettingsGroup title="Alert me about">
         {rows.map((row, i) => (
@@ -112,7 +211,12 @@ export default function NotificationsPage() {
                 <row.icon size={17} className="shrink-0 text-ink-muted" />
                 <Switch
                   label={row.label}
-                  checked={notifications[row.key] !== false}
+                  sublabel={row.sublabel}
+                  checked={
+                    row.defaultOn === false
+                      ? notifications[row.key] === true
+                      : notifications[row.key] !== false
+                  }
                   onChange={(v) => updateSettings({ notifications: { [row.key]: v } })}
                 />
               </div>

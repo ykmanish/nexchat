@@ -7,7 +7,7 @@ import { linkCode, shortId, randomToken, sha256 } from '../utils/ids.js';
 import { issueTokens, hashToken } from '../services/token.js';
 import { mailer } from '../services/mailer.js';
 import { getIO } from '../sockets/io.js';
-import { pushPublicKey, pushReady } from '../services/push.js';
+import { pushPublicKey, pushReady, pushTest, pushEphemeral } from '../services/push.js';
 
 const LINK_TTL_MS = 2 * 60 * 1000; // a QR is only good for two minutes
 
@@ -95,7 +95,15 @@ export const revokeAllOtherDevices = asyncHandler(async (req, res) => {
 
 /** The browser needs this to build a PushSubscription. */
 export const vapidKey = asyncHandler(async (_req, res) => {
-  res.json({ success: true, enabled: pushReady(), publicKey: pushPublicKey() });
+  res.json({
+    success: true,
+    enabled: pushReady(),
+    publicKey: pushPublicKey(),
+    /* Subscribing against a key that dies with the process is worse than not
+       subscribing at all — the app would claim notifications were on and then
+       quietly deliver none after the next deploy. The client says so instead. */
+    ephemeral: pushEphemeral(),
+  });
 });
 
 export const updatePushSubscription = asyncHandler(async (req, res) => {
@@ -104,6 +112,20 @@ export const updatePushSubscription = asyncHandler(async (req, res) => {
     { pushSubscription: req.body.subscription || null }
   );
   res.json({ success: true });
+});
+
+/**
+ * Sends this device one notification, on request.
+ *
+ * Worth having as a real endpoint rather than a client-side `showNotification`
+ * call: the local version proves only that the browser can draw a notification,
+ * while this exercises the whole chain — VAPID keys, the push service, the
+ * subscription, and the service worker's push handler. That is the chain that
+ * breaks, and until now there was no way to tell which link had.
+ */
+export const testPush = asyncHandler(async (req, res) => {
+  const result = await pushTest(req.user._id, req.deviceId);
+  res.json({ success: result.sent > 0, ...result });
 });
 
 /* ──────────────────────── scan-to-link a new device ──────────────────────── */

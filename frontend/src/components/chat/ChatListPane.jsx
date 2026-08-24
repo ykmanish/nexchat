@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -27,6 +27,9 @@ import { ChatRow, ChatRowSkeleton } from './ChatRow';
 import { StoryRail } from './StoryRail';
 import { EmptyState } from './EmptyState';
 
+/* A stable identity, so "not searching" never counts as a change. */
+const EMPTY_PLAIN = {};
+
 const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
@@ -42,7 +45,7 @@ export function ChatListPane() {
 
   const conversations = useChat((s) => s.conversations);
   const loaded = useChat((s) => s.loaded);
-  const plain = useChat((s) => s.plain);
+  const showArchived = useChat((s) => s.showArchived);
   const loadConversations = useChat((s) => s.loadConversations);
   const user = useAuth((s) => s.user);
   const openSheet = useUI((s) => s.openSheet);
@@ -56,6 +59,25 @@ export function ChatListPane() {
   const archivedCount = useMemo(
     () => conversations.filter((c) => c.archived).length,
     [conversations]
+  );
+
+  /* Message text is only needed to search inside previews, so the subscription
+     is taken only while there is something to search for. Selecting `plain`
+     unconditionally meant every decrypted message produced a new identity and
+     re-ran the filter over the whole list — forty times when opening a chat. */
+  const searchingText = query.trim().length > 0;
+  const plain = useChat((s) => (searchingText ? s.plain : EMPTY_PLAIN));
+
+  /* One handler for every row, rather than a fresh closure per row per render.
+     `ChatRow` is memoised and compares its props, so an inline arrow here would
+     look like a changed prop on every single row and defeat the memo entirely —
+     the row would still be doing the work the memo was added to avoid. */
+  const openChat = useCallback(
+    (id) => {
+      feedback('select');
+      router.push('/chats/' + id);
+    },
+    [router]
   );
 
   const visible = useMemo(() => {
@@ -75,9 +97,59 @@ export function ChatListPane() {
     return list;
   }, [conversations, filter, query, archivedView, plain]);
 
-  /* Archived chats live in the same collection, so reload when the view flips. */
+  /**
+   * Warms the thread route for the chats most likely to be opened next.
+   *
+   * `/chats/[id]` is a dynamic segment, so the first tap on a chat pays for a
+   * round trip that has nothing to do with the message data — the store already
+   * holds everything needed to draw it. `router.push` does not prefetch (only
+   * `<Link>` does), which is why opening a chat felt slower than it had any
+   * right to. Prefetching the visible handful moves that cost to idle time.
+   *
+   * Bounded at ten and deferred to an idle callback: prefetching a list of two
+   * hundred chats would spend more bandwidth than it saves, and doing it during
+   * the same frame as the list appearing is exactly the wrong moment.
+   *
+   * Note that `router.prefetch` is a no-op under `next dev` — Next only
+   * prefetches in production builds — so there is nothing to observe in the
+   * network panel while developing. Check it against `next start`.
+   */
   useEffect(() => {
+    if (!visible.length) return undefined;
+
+    const ids = visible.slice(0, 10).map((c) => c._id);
+    const schedule =
+      typeof window !== 'undefined' && window.requestIdleCallback
+        ? window.requestIdleCallback
+        : (fn) => setTimeout(fn, 300);
+    const cancel =
+      typeof window !== 'undefined' && window.cancelIdleCallback
+        ? window.cancelIdleCallback
+        : clearTimeout;
+
+    const handle = schedule(() => {
+      ids.forEach((id) => {
+        try {
+          router.prefetch('/chats/' + id);
+        } catch {
+          /* prefetching is an optimisation; failing at it changes nothing */
+        }
+      });
+    });
+
+    return () => cancel(handle);
+    // Only the identity of the top slice matters, not every field on it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible.slice(0, 10).map((c) => c._id).join(','), router]);
+
+  /* Archived chats live in the same collection, so reload when the view flips.
+     The shell has already asked for the inbox by the time this mounts, so the
+     first render skips the duplicate request — two identical fetches racing was
+     one of the ways the list ended up empty. */
+  useEffect(() => {
+    if (loaded && showArchived === archivedView) return;
     loadConversations({ archived: archivedView }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [archivedView, loadConversations]);
 
   return (
@@ -198,7 +270,7 @@ export function ChatListPane() {
       )}
 
       {/* ── the list ── */}
-      <div className="scroll-soft min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="scroll-soft scroll-layer min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {!loaded ? (
           <div>
             {Array.from({ length: 8 }).map((_, i) => (
@@ -220,10 +292,7 @@ export function ChatListPane() {
                 active={conversation._id === activeId}
                 currentUserId={user?._id}
                 showDivider={i < visible.length - 1}
-                onOpen={() => {
-                  feedback('select');
-                  router.push('/chats/' + conversation._id);
-                }}
+                onOpen={openChat}
               />
             ))}
           </AnimatePresence>

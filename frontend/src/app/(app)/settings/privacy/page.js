@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Ban, Eye, UserPlus, Image as ImageIcon, Info, KeyRound, Lock, FlipVertical, MoveUp,
+  Siren,
 } from 'lucide-react';
 import { SettingsShell, SettingsGroup, SettingsRow, Divider } from '@/components/layout/SettingsShell';
 import { Switch, Segmented } from '@/components/ui/Field';
@@ -18,6 +19,7 @@ import { appLock, AUTO_LOCK_OPTIONS } from '@/lib/applock';
 import * as passkeys from '@/lib/passkeys';
 import * as flip from '@/lib/flipgesture';
 import * as tilt from '@/lib/tiltreveal';
+import * as shake from '@/lib/shakegesture';
 
 /** "On · After 5 minutes · fingerprint and passkey" */
 function lockSummary({ enabled, autoLockSeconds, kinds }) {
@@ -55,6 +57,7 @@ export default function PrivacyPage() {
   const sheet = useUI((s) => s.sheet);
   const [flipState, setFlipState] = useState(null);
   const [tiltState, setTiltState] = useState(null);
+  const [shakeState, setShakeState] = useState(null);
   const openSheet = useUI((s) => s.openSheet);
 
   const refreshLock = () =>
@@ -82,6 +85,7 @@ export default function PrivacyPage() {
     refreshLock();
     flip.config.get().then(setFlipState);
     tilt.config.get().then(setTiltState);
+    shake.config.get().then(setShakeState);
     passkeys
       .list()
       .then((list) => setPasskeyCount(list.length))
@@ -216,6 +220,24 @@ export default function PrivacyPage() {
           onClick={() => {
             feedback('open');
             openSheet('tiltReveal');
+          }}
+        />
+        <Divider />
+        <ListButton
+          icon={Siren}
+          label="Shake for emergency"
+          sublabel={
+            !shake.isSupported()
+              ? shake.unsupportedReason() || 'Not available on this device'
+              : shakeState?.enabled
+                ? 'On · ' +
+                  (shake.profileFor(shakeState.sensitivity).label.toLowerCase() + ' shake')
+                : 'Off'
+          }
+          chevron
+          onClick={() => {
+            feedback('open');
+            openSheet('shakeSos');
           }}
         />
         <Divider />
