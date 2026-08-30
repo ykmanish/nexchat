@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.js';
 import { Device } from '../models/Device.js';
 import { User } from '../models/User.js';
 import { presence } from './presence.js';
+import { initFcm, fcmReady, sendToToken } from './fcm.js';
 
 let ready = false;
 let publicKey = null;
@@ -19,6 +20,11 @@ let ephemeral = false;
  * it is from and open the right chat.
  */
 export function initPush() {
+  // The Android app is delivered to over FCM; the browser over Web Push. Both
+  // are optional and independent — a server with only one configured still
+  // notifies the clients it can reach.
+  initFcm();
+
   let { publicKey: pub, privateKey: priv } = env.push;
 
   if (!pub || !priv) {
@@ -57,12 +63,59 @@ export function initPush() {
 }
 
 export const pushPublicKey = () => publicKey;
-export const pushReady = () => ready;
 export const pushEphemeral = () => ephemeral;
+export { fcmReady };
 
-/** Removes a subscription the browser has permanently rejected. */
+/** True when *some* transport can deliver — Web Push, FCM, or both. */
+export const pushReady = () => ready || fcmReady();
+
+/** Removes a subscription the client has permanently rejected. */
 async function dropSubscription(deviceId) {
   await Device.updateOne({ deviceId }, { pushSubscription: null }).catch(() => {});
+}
+
+/**
+ * Sends to one device over whichever transport its subscription describes.
+ *
+ * A browser stores a PushSubscription (it has an `endpoint`); the Android app
+ * stores `{ type: 'fcm', token }`. Discriminating on the stored shape rather
+ * than on a column keeps this additive — existing rows are untouched and keep
+ * working exactly as before.
+ */
+async function deliver(device, payload, { urgency, collapse, ttl }) {
+  const subscription = device.pushSubscription;
+  if (!subscription) return false;
+
+  if (subscription.type === 'fcm') {
+    if (!fcmReady()) return false;
+
+    const result = await sendToToken(subscription.token, payload, {
+      collapseKey: collapse,
+      ttlSeconds: ttl,
+    });
+
+    if (result.gone) await dropSubscription(device.deviceId);
+    return result.ok;
+  }
+
+  if (!ready || !subscription.endpoint) return false;
+
+  try {
+    await webpush.sendNotification(subscription, JSON.stringify(payload), {
+      TTL: ttl,
+      urgency,
+      ...(collapse ? { topic: collapse } : {}),
+    });
+    return true;
+  } catch (err) {
+    // 404/410 mean the browser threw the subscription away for good.
+    if (err.statusCode === 404 || err.statusCode === 410) {
+      await dropSubscription(device.deviceId);
+    } else {
+      logger.warn('Push to ' + device.deviceId + ' failed: ' + err.message);
+    }
+    return false;
+  }
 }
 
 /**
@@ -87,7 +140,7 @@ async function dropSubscription(deviceId) {
  * ring once, not ten times.
  */
 export async function pushToUser(userId, payload, { skipDeviceIds = [], urgency = 'high' } = {}) {
-  if (!ready) return 0;
+  if (!pushReady()) return 0;
 
   const skip = new Set(presence.attentiveDevicesOf(userId));
   skipDeviceIds.forEach((d) => skip.add(String(d)));
@@ -103,32 +156,17 @@ export async function pushToUser(userId, payload, { skipDeviceIds = [], urgency 
   const targets = devices.filter((d) => !skip.has(String(d.deviceId)));
   if (!targets.length) return 0;
 
-  const body = JSON.stringify(payload);
   const options = {
-    TTL: payload.type === 'typing' ? 30 : 60 * 60,
+    ttl: payload.type === 'typing' ? 30 : 60 * 60,
     urgency,
-    ...(collapseKey(payload) ? { topic: collapseKey(payload) } : {}),
+    collapse: collapseKey(payload),
   };
 
-  let sent = 0;
-
-  await Promise.all(
-    targets.map(async (device) => {
-      try {
-        await webpush.sendNotification(device.pushSubscription, body, options);
-        sent += 1;
-      } catch (err) {
-        // 404/410 mean the browser threw the subscription away for good.
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await dropSubscription(device.deviceId);
-        } else {
-          logger.warn('Push to ' + device.deviceId + ' failed: ' + err.message);
-        }
-      }
-    })
+  const results = await Promise.all(
+    targets.map((device) => deliver(device, payload, options).catch(() => false))
   );
 
-  return sent;
+  return results.filter(Boolean).length;
 }
 
 /**
@@ -158,7 +196,7 @@ function collapseKey(payload) {
  * suppress the one notification you are trying to see.
  */
 export async function pushTest(userId, deviceId) {
-  if (!ready) return { sent: 0, reason: 'Push is not configured on this server' };
+  if (!pushReady()) return { sent: 0, reason: 'Push is not configured on this server' };
 
   const device = await Device.findOne({
     user: userId,
@@ -179,19 +217,23 @@ export async function pushTest(userId, deviceId) {
     at: new Date().toISOString(),
   };
 
-  try {
-    await webpush.sendNotification(device.pushSubscription, JSON.stringify(payload), {
-      TTL: 60,
-      urgency: 'high',
-    });
-    return { sent: 1 };
-  } catch (err) {
-    if (err.statusCode === 404 || err.statusCode === 410) {
-      await dropSubscription(device.deviceId);
-      return { sent: 0, reason: 'The browser has dropped this subscription — turn push on again' };
-    }
-    return { sent: 0, reason: err.message };
-  }
+  const delivered = await deliver(device, payload, {
+    ttl: 60,
+    urgency: 'high',
+    collapse: null,
+  });
+
+  if (delivered) return { sent: 1 };
+
+  // `deliver` has already dropped the subscription if the service retired it,
+  // so a second look tells us which of the two failures this was.
+  const still = await Device.findOne({ deviceId }).select('pushSubscription').lean();
+  return {
+    sent: 0,
+    reason: still?.pushSubscription
+      ? 'The push service would not accept it — check the server logs'
+      : 'This device dropped its subscription — turn notifications on again',
+  };
 }
 
 /* One typing notice per conversation per person per cooldown — otherwise every

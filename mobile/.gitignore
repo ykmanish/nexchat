@@ -1,23 +1,20 @@
 node_modules/
-.next/
-out/
-build/
+.expo/
 dist/
-
-.env
-.env.local
-.env.*.local
-# The server's build-time config. Not secret today, but it sits beside
-# the ones that are — keep it out of the repo by default.
-.env.production
-
+android/
+ios/
 *.log
-server.log
-
 .DS_Store
-Thumbs.db
-.idea/
-.vscode/
+
+# Comes from your own Firebase project — never commit it.
+google-services.json
+
+# Build output
+*.apk
+*.aab
+
+# Signing key — losing this means you can never update an installed APK.
+credentials/
 
 # Firebase service-account keys. These are full admin credentials for the
 # Firebase project and belong on the server, never in the repo — a broad

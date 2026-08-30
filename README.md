@@ -7,8 +7,14 @@ that lives on a phone.
 ```
 nexchat/
 ├── backend/     Express + MongoDB + Socket.IO
-└── frontend/    Next.js (App Router, JSX) + Tailwind
+├── frontend/    Next.js (App Router, JSX) + Tailwind
+└── mobile/      React Native (Expo) — Android
 ```
+
+The mobile client talks to the same API and shares the same accounts. Its
+cryptography is a re-implementation of the browser's on @noble, because React
+Native has no Web Crypto — see [mobile/README.md](mobile/README.md), and run
+`cd mobile && npm test` before touching anything under `mobile/src/lib/crypto.js`.
 
 ---
 
@@ -157,7 +163,10 @@ playback, a swipe-to-dismiss lightbox.
 **Realtime** — typing and recording indicators, presence, delivered/read receipts,
 per-device fan-out, offline queue that flushes on reconnect, gap-filling sync.
 
-**Notifications** — Web Push to every device that is not currently on screen.
+**Notifications** — Web Push to every browser, and FCM to the Android app, for
+every device that is not currently on screen. The native client can be replied to
+from the notification shade without opening the app, and queues that reply
+durably so a background context Android stops mid-send does not lose it.
 A connected socket is *not* treated as proof the message was seen: a backgrounded
 phone keeps its websocket while the browser freezes the tab, so clients report
 their visibility and a hidden device gets a push like a disconnected one. Sent at

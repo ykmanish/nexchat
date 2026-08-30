@@ -44,6 +44,15 @@ export const env = {
     privateKey: process.env.VAPID_PRIVATE_KEY || '',
     subject: process.env.VAPID_SUBJECT || 'mailto:no-reply@nexchat.app',
   },
+
+  /* Firebase Cloud Messaging, for the Android app. Either a path to the
+     service-account JSON downloaded from the Firebase console, or that same
+     JSON inline for deployments that would rather not mount a file. Leave both
+     blank and the app falls back to its socket transport. */
+  fcm: {
+    serviceAccountPath: process.env.FCM_SERVICE_ACCOUNT || '',
+    serviceAccountJson: process.env.FCM_SERVICE_ACCOUNT_JSON || '',
+  },
 };
 
 export const rootDir = path.resolve(__dirname, '../..');

@@ -7,7 +7,7 @@ import { linkCode, shortId, randomToken, sha256 } from '../utils/ids.js';
 import { issueTokens, hashToken } from '../services/token.js';
 import { mailer } from '../services/mailer.js';
 import { getIO } from '../sockets/io.js';
-import { pushPublicKey, pushReady, pushTest, pushEphemeral } from '../services/push.js';
+import { pushPublicKey, pushReady, pushTest, pushEphemeral, fcmReady } from '../services/push.js';
 
 const LINK_TTL_MS = 2 * 60 * 1000; // a QR is only good for two minutes
 
@@ -93,7 +93,14 @@ export const revokeAllOtherDevices = asyncHandler(async (req, res) => {
   res.json({ success: true, message: others.length + ' device(s) signed out' });
 });
 
-/** The browser needs this to build a PushSubscription. */
+/**
+ * What this server can deliver, and how.
+ *
+ * The browser needs `publicKey` to build a PushSubscription. The Android app
+ * needs none of that — it reads `fcm` to know whether the server can reach it
+ * while the app is closed, and says so on its notifications screen rather than
+ * claiming push is on when only the socket transport is available.
+ */
 export const vapidKey = asyncHandler(async (_req, res) => {
   res.json({
     success: true,
@@ -103,6 +110,7 @@ export const vapidKey = asyncHandler(async (_req, res) => {
        subscribing at all — the app would claim notifications were on and then
        quietly deliver none after the next deploy. The client says so instead. */
     ephemeral: pushEphemeral(),
+    fcm: fcmReady(),
   });
 });
 
