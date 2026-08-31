@@ -6,12 +6,13 @@ import { Heart, ChevronLeft, ChevronRight, Play, Volume2, VolumeX } from 'lucide
 import { mediaUrl } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-/* One frame for every post, the way Instagram's feed does it: 4:5, and the
-   picture is cropped to fill it rather than the frame being resized to fit the
-   picture. Letting each post size its own frame meant a column of cards that
-   were all different heights, and scrolling it felt like a jumble — a single
-   ratio is what makes a feed read as a feed. Nothing is lost: the full,
-   uncropped image is one tap away in the viewer. */
+/* One frame for every post — 4:5, so a column of cards is a column rather than
+   a jumble of different heights — with the picture fitted *inside* it whole.
+   `contain`, not `cover`: cropping to fill guarantees a uniform grid but cuts
+   the sides off anything that is not already 4:5, and a photo you have to open
+   to see properly is not really in the feed. The letterbox is filled with the
+   picture's own blurred edges, so a portrait shot still reads as one object
+   rather than as an image marooned in a grey box. */
 const FRAME_RATIO = 4 / 5;
 
 /**
@@ -94,10 +95,17 @@ export function PostMedia({ media = [], onDoubleTapLike, onOpen, liked, classNam
     >
       <div
         ref={stripRef}
-        onScroll={onScroll}
+        onScroll={many ? onScroll : undefined}
         onPointerUp={onPointerUp}
         className={cn(
-          'no-scrollbar flex h-full w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain',
+          'flex h-full w-full',
+          /* Only a carousel is a scroller. A single photo in a scrollable
+             container still rubber-bands under a finger on touch, so the
+             picture slid about while you were trying to tap or scroll the
+             feed past it. */
+          many
+            ? 'no-scrollbar snap-x snap-mandatory overflow-x-auto overscroll-x-contain'
+            : 'overflow-hidden',
           onOpen && 'cursor-zoom-in'
         )}
       >
@@ -191,16 +199,15 @@ function Slide({ item, active }) {
   const [loaded, setLoaded] = useState(false);
 
   return (
-    <div className="relative h-full w-full shrink-0 snap-center snap-always">
+    <div className="relative h-full w-full shrink-0 snap-center snap-always overflow-hidden">
+      {/* Stays put once the picture has loaded — it is what fills the space a
+          contained image leaves at the edges. */}
       {item.placeholder && (
         <img
           src={item.placeholder}
           alt=""
           aria-hidden
-          className={cn(
-            'absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500',
-            loaded ? 'opacity-0' : 'opacity-100'
-          )}
+          className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl saturate-150"
         />
       )}
 
@@ -215,7 +222,7 @@ function Slide({ item, active }) {
           decoding="async"
           onLoad={() => setLoaded(true)}
           className={cn(
-            'relative h-full w-full object-cover transition-opacity duration-300',
+            'relative h-full w-full object-contain transition-opacity duration-300',
             loaded ? 'opacity-100' : 'opacity-0'
           )}
         />
@@ -262,7 +269,7 @@ function VideoSlide({ item, active, onReady }) {
         onLoadedData={onReady}
         onPause={() => setPlaying(false)}
         onPlay={() => setPlaying(true)}
-        className="relative h-full w-full object-cover"
+        className="relative h-full w-full object-contain"
       />
 
       {!playing && (

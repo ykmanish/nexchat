@@ -3,13 +3,16 @@
  * live database during development, and the verification codes that belong to
  * them. Refuses to touch anything that is a verified account.
  *
- * Run once from backend/, then delete this file:
+ * Run once from the repo root, then delete this file:
  *   node cleanup-test-accounts.mjs
+ *
+ * It lives here rather than in backend/ on purpose: nodemon watches that whole
+ * directory, so a stray script there restarts the dev API.
  */
 import mongoose from 'mongoose';
-import { env } from './src/config/env.js';
-import { User } from './src/models/User.js';
-import { Otp } from './src/models/Otp.js';
+import { env } from './backend/src/config/env.js';
+import { User } from './backend/src/models/User.js';
+import { Otp } from './backend/src/models/Otp.js';
 
 const EMAILS = ['manish@chax.test', 'priya@chax.test', 'sam@chax.test', 'nadia@chax.test'];
 

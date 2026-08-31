@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Compass, Bookmark, PenSquare, Sparkles } from 'lucide-react';
+import { Compass, Bookmark, Plus, PenSquare, Sparkles } from 'lucide-react';
 import { useFeed } from '@/store/feed';
 import { useUI } from '@/store/ui';
 import { useChat } from '@/store/chat';
@@ -14,7 +14,7 @@ import {
   TrendingTags,
 } from '@/components/feed/FeedPieces';
 import { Logo } from '@/components/brand/Logo';
-import { IconButton, Fab } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/Button';
 
 /**
  * The home feed — and the first thing anybody sees when they open Chax.
@@ -59,6 +59,17 @@ export default function FeedPage() {
 
           <div className="flex-1" />
 
+          {/* Composing is the primary action, so it lives in the header at
+              every width. On a phone it is the only way in — the "share
+              something" row costs a whole card's height for a control that
+              says nothing, and a thumb reaches the header as easily as the
+              row it replaces. */}
+          <IconButton
+            icon={Plus}
+            label="New post"
+            variant="tinted"
+            onClick={() => openSheet('newPost')}
+          />
           <IconButton
             icon={Compass}
             label="Explore"
@@ -70,13 +81,6 @@ export default function FeedPage() {
             label="Saved"
             variant="ghost"
             onClick={() => router.push('/feed/saved')}
-          />
-          <IconButton
-            icon={PenSquare}
-            label="New post"
-            variant="ghost"
-            className="lg:hidden"
-            onClick={() => openSheet('newPost')}
           />
         </div>
       </header>
@@ -95,7 +99,7 @@ export default function FeedPage() {
               <StoryRail />
             </div>
 
-            <div className="sm:mb-3">
+            <div className="hidden lg:mb-3 lg:block">
               <ComposerTrigger />
             </div>
 
@@ -142,14 +146,6 @@ export default function FeedPage() {
         </div>
       </div>
 
-      {/* Desktop gets a real compose button in the header; a phone gets the
-          thumb-reachable one instead. */}
-      <Fab
-        icon={PenSquare}
-        label="New post"
-        onClick={() => openSheet('newPost')}
-        className="absolute bottom-5 right-5 z-20 hidden lg:grid"
-      />
     </div>
   );
 }
