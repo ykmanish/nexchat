@@ -28,6 +28,13 @@ export function FeedList({
   const sentinel = useRef(null);
   const firstLoad = useRef(false);
 
+  /* Whether this list already had rows when the pane mounted.
+     Coming back to a tab should look like the tab reappearing, not like it
+     being built again — replaying a fade-and-lift on forty cards is both
+     visibly wrong and a real cost in frames at exactly the moment the browser
+     is busiest. New arrivals still animate; a revisit does not. */
+  const revisit = useRef(list.ids.length > 0);
+
   useEffect(() => {
     if (firstLoad.current) return;
     firstLoad.current = true;
@@ -81,7 +88,7 @@ export function FeedList({
     <div className={className}>
       {rows.map((post, i) => (
         <div key={post._id}>
-          <PostCard post={post} priority={i < 2} />
+          <PostCard post={post} priority={revisit.current || i < 2} />
           {/* Something other than posts, every so often — a suggestions rail
               sitting inside the scroll rather than pinned above it. */}
           {interleave?.(i)}

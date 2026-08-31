@@ -26,6 +26,7 @@ import { Dropdown } from '@/components/ui/Dropdown';
 import { ChatRow, ChatRowSkeleton } from './ChatRow';
 import { StoryRail } from './StoryRail';
 import { EmptyState } from './EmptyState';
+import { usePaneScroll } from '@/lib/usePaneScroll';
 
 /* A stable identity, so "not searching" never counts as a change. */
 const EMPTY_PLAIN = {};
@@ -37,6 +38,9 @@ const FILTERS = [
 ];
 
 export function ChatListPane() {
+  /* The list comes back where it was left, like the feed does. */
+  const { ref: listScroll } = usePaneScroll('chats');
+
   const router = useRouter();
   const params = useParams();
   const search = useSearchParams();
@@ -49,6 +53,17 @@ export function ChatListPane() {
   const loadConversations = useChat((s) => s.loadConversations);
   const user = useAuth((s) => s.user);
   const openSheet = useUI((s) => s.openSheet);
+
+  /* Warm the thread route before anyone taps a row.
+     `/chats/[id]` is a single route however many conversations there are, so
+     fetching it once for the top of the list loads the code for all of them.
+     Opening a chat then begins with the work instead of with a download. */
+  const warmed = useRef(false);
+  useEffect(() => {
+    if (warmed.current || !conversations.length) return;
+    warmed.current = true;
+    router.prefetch('/chats/' + conversations[0]._id);
+  }, [conversations, router]);
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -270,7 +285,10 @@ export function ChatListPane() {
       )}
 
       {/* ── the list ── */}
-      <div className="scroll-soft scroll-layer min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div
+        ref={listScroll}
+        className="scroll-soft scroll-layer min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
         {!loaded ? (
           <div>
             {Array.from({ length: 8 }).map((_, i) => (

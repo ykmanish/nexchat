@@ -354,7 +354,7 @@ function SocketBridge() {
         }));
       },
 
-      'story:new': () => chat().loadStories().catch(() => {}),
+      'story:new': () => chat().loadStories({ force: true }).catch(() => {}),
 
       /* ── feed ──
          A post from somebody you follow slots straight into the timeline. The

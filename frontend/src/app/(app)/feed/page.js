@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Compass, Bookmark, Plus, PenSquare, Sparkles } from 'lucide-react';
 import { useFeed } from '@/store/feed';
+import { usePaneScroll } from '@/lib/usePaneScroll';
 import { useUI } from '@/store/ui';
 import { useChat } from '@/store/chat';
 import { StoryRail } from '@/components/chat/StoryRail';
@@ -31,7 +32,7 @@ export default function FeedPage() {
   const loadTrending = useFeed((s) => s.loadTrending);
   const loadStories = useChat((s) => s.loadStories);
 
-  const scroller = useRef(null);
+  const { ref: scroller, scrollToTop } = usePaneScroll('feed');
 
   useEffect(() => {
     loadSuggestions();
@@ -49,7 +50,7 @@ export default function FeedPage() {
         <div className="mx-auto flex h-[54px] w-full max-w-[600px] items-center gap-2 px-4 xl:max-w-[952px]">
           <button
             type="button"
-            onClick={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            onClick={() => scrollToTop()}
             className="flex items-center gap-2.5"
           >
             <Logo size={26} />

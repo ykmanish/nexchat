@@ -36,6 +36,15 @@ const EMPTY_LIST = Object.freeze(emptyList());
    every time a card scrolled past. */
 const seenThisSession = new Set();
 
+/* How long a list or a sidebar panel is treated as good enough to show without
+   asking again. Returning to a tab you left ten seconds ago should be instant
+   and silent; coming back after a couple of minutes should quietly catch up. */
+const STALE_MS = 90_000;
+const fetchedAt = new Map();
+
+const isFresh = (key) => Date.now() - (fetchedAt.get(key) || 0) < STALE_MS;
+const markFetched = (key) => fetchedAt.set(key, Date.now());
+
 export const useFeed = create((set, get) => ({
   posts: {}, // id -> post
   lists: {
@@ -73,13 +82,24 @@ export const useFeed = create((set, get) => ({
    * is followed and the page is appended. Ids are de-duplicated on append
    * because a socket can insert a post at the top between two pages.
    */
-  async loadList(key, { refresh = false, params = {} } = {}) {
+  async loadList(key, { refresh = false, params = {}, force = false } = {}) {
     const list = get().lists[key] || EMPTY_LIST;
     if (list.loading) return;
     if (!refresh && !list.hasMore) return;
 
+    /* Already have this, and it is recent — leave it alone. This is the whole
+       difference between a tab that reappears and a tab that reloads. */
+    const cacheKey = key + JSON.stringify(params);
+    if (refresh && !force && list.ids.length && isFresh(cacheKey)) return;
+
     set((s) => ({
-      lists: { ...s.lists, [key]: { ...list, loading: true, error: null } },
+      lists: {
+        ...s.lists,
+        /* Only claim to be loading when there is nothing to show. With rows
+           already on screen this is a background refresh, and flipping the
+           flag would swap them for a skeleton for no reason. */
+        [key]: { ...list, loading: list.ids.length ? list.loading : true, error: null },
+      },
     }));
 
     const paths = { home: '/posts/feed', explore: '/posts/explore', saved: '/posts/saved' };
@@ -90,6 +110,7 @@ export const useFeed = create((set, get) => ({
       });
 
       get().mergePosts(data.posts || []);
+      markFetched(cacheKey);
 
       set((s) => {
         const current = s.lists[key] || EMPTY_LIST;
@@ -580,19 +601,23 @@ export const useFeed = create((set, get) => ({
     }
   },
 
-  async loadSuggestions() {
+  async loadSuggestions({ force = false } = {}) {
+    if (!force && get().suggestions.length && isFresh('suggestions')) return;
     try {
       const { data } = await api.get('/follows/suggestions');
       set({ suggestions: data.users || [] });
+      markFetched('suggestions');
     } catch {
       /* Suggestions are a nicety; a failure must not take the feed with it. */
     }
   },
 
-  async loadTrending() {
+  async loadTrending({ force = false } = {}) {
+    if (!force && get().trending.length && isFresh('trending')) return;
     try {
       const { data } = await api.get('/posts/trending');
       set({ trending: data.tags || [] });
+      markFetched('trending');
     } catch {
       /* as above */
     }
@@ -626,8 +651,10 @@ export const useFeed = create((set, get) => ({
     });
   },
 
-  reset: () =>
-    set({
+  reset: () => {
+    fetchedAt.clear();
+    seenThisSession.clear();
+    return set({
       posts: {},
       lists: { home: emptyList(), explore: emptyList(), saved: emptyList() },
       comments: {},
@@ -635,7 +662,8 @@ export const useFeed = create((set, get) => ({
       suggestions: [],
       trending: [],
       discover: false,
-    }),
+    });
+  },
 }));
 
 /* ────────────────────────────── helpers ────────────────────────────── */

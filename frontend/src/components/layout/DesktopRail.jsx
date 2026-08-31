@@ -53,6 +53,12 @@ export function DesktopRail() {
 
   useEffect(() => setMounted(true), []);
 
+  /* Same reasoning as the mobile tab bar: a rail switch should be local work,
+     not a fetch. */
+  useEffect(() => {
+    [...PRIMARY, ...SECONDARY].forEach((item) => router.prefetch(item.href));
+  }, [router]);
+
   const archivedOpen = pathname.startsWith('/chats') && search.get('archived') === '1';
 
   return (

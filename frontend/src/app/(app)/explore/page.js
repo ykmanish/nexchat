@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Search, X, Loader2, Compass } from 'lucide-react';
 import { useFeed, selectList } from '@/store/feed';
+import { usePaneScroll } from '@/lib/usePaneScroll';
 import { PostGrid } from '@/components/feed/PostGrid';
 import { WhoToFollow, TrendingTags } from '@/components/feed/FeedPieces';
 import { PeopleResults } from '@/components/feed/PeopleResults';
@@ -32,7 +33,7 @@ export default function ExplorePage() {
   const [query, setQuery] = useState(initial);
   const [applied, setApplied] = useState(initial);
   const sentinel = useRef(null);
-  const scroller = useRef(null);
+  const { ref: scroller } = usePaneScroll('explore');
 
   useEffect(() => {
     loadSuggestions();

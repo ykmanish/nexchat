@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Home, MessageCircle, CircleDashed, Phone, CircleUser } from 'lucide-react';
@@ -23,6 +24,16 @@ export function BottomNav() {
   const unread = useChat((s) =>
     s.conversations.reduce((n, c) => n + (c.archived ? 0 : c.unreadCount || 0), 0)
   );
+
+  /* Pull every tab's payload down before it is asked for.
+     Without this each switch begins with a round trip for the route's own
+     bundle and RSC payload — a couple of hundred milliseconds of nothing
+     happening after the tap, which is exactly the delay that makes a web app
+     feel like a web app. Four small routes, fetched once, and from then on a
+     tab switch is local work. */
+  useEffect(() => {
+    TABS.forEach((tab) => router.prefetch(tab.href));
+  }, [router]);
 
   return (
     <nav className="safe-bottom relative z-30 shrink-0 border-t border-line bg-surface lg:hidden">

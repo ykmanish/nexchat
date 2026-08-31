@@ -21,6 +21,8 @@ function recipientsOf(conversation) {
     .filter((r) => r.identityPublicKey);
 }
 
+let storiesFetchedAt = 0;
+
 export const useChat = create((set, get) => ({
   conversations: [],
   activeId: null,
@@ -871,8 +873,15 @@ export const useChat = create((set, get) => ({
 
   /* ────────────────────────── stories ────────────────────────── */
 
-  async loadStories() {
+  /* Re-asked at most once a minute. The rail sits at the top of the feed, so
+     every visit to that tab used to refetch it — and a story rail that has not
+     changed is not worth a round trip on every tab switch. */
+  async loadStories({ force = false } = {}) {
+    if (!force && storiesFetchedAt && Date.now() - storiesFetchedAt < 60_000) {
+      return get().stories;
+    }
     const { data } = await api.get('/stories');
+    storiesFetchedAt = Date.now();
     set({ stories: data.rings });
     return data.rings;
   },

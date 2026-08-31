@@ -60,6 +60,21 @@
         "NEXT_PUBLIC_API_URL": "http://localhost:5050",
         "NEXT_DIST_DIR": ".next-test"
       }
+    },
+    {
+      "name": "nexchat-web-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start"
+      ],
+      "cwd": "frontend",
+      "port": 3200,
+      "env": {
+        "PORT": "3200",
+        "NEXT_PUBLIC_API_URL": "http://localhost:5050",
+        "NEXT_DIST_DIR": ".next-prod"
+      }
     }
   ]
 }
