@@ -204,7 +204,7 @@ Two things left. Calls will not use the relay until both are done.
      TURN_SECRET=$SECRET
      TURN_TTL_SECONDS=43200
 
-     pm2 restart nexchat-api
+     pm2 restart nexchat-backend
 
 To check it end to end, open the Trickle ICE page:
 
