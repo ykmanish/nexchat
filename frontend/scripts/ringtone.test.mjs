@@ -118,12 +118,51 @@ class FakeOsc extends FakeNode {
   }
 }
 
+/* An audio clock and a timer queue the test drives by hand. The ring tops itself
+   up on an interval, so proving it never runs out means being able to move time
+   forward — and being able to move it forward *without* the timer firing, which
+   is how a throttled background tab behaves. */
+let now = 0;
+let timerSeq = 0;
+const timers = new Map(); // id -> { every, next, fn }
+
+globalThis.setInterval = (fn, every) => {
+  timerSeq += 1;
+  timers.set(timerSeq, { every: every / 1000, next: now + every / 1000, fn });
+  return timerSeq;
+};
+globalThis.clearInterval = (id) => timers.delete(id);
+
+/** Move the clock on, firing top-ups as they come due. */
+const advance = (seconds) => {
+  const target = now + seconds;
+  for (;;) {
+    const due = [...timers.entries()]
+      .filter(([, t]) => t.next <= target)
+      .sort((a, b) => a[1].next - b[1].next)[0];
+    if (!due) break;
+    const [id, t] = due;
+    now = t.next;
+    t.next += t.every;
+    t.fn();
+    if (!timers.has(id)) continue;
+  }
+  now = target;
+};
+
+/** Move the clock on with every timer throttled to nothing, as a hidden tab. */
+const advanceThrottled = (seconds) => {
+  now += seconds;
+};
+
 class FakeAudioContext {
   constructor() {
-    this.currentTime = 0;
     this.sampleRate = 48000;
     this.destination = new FakeNode();
     this.destination.busName = 'destination';
+  }
+  get currentTime() {
+    return now;
   }
   get state() {
     return state;
@@ -221,53 +260,94 @@ const reset = () => {
   vibrations.length = 0;
   state = 'running';
   resumeAllowed = true;
+  timers.clear();
+  now = 0;
   audio.setSoundEnabled(true);
   audio.setRingEnabled(true);
   audio.setHapticsEnabled(true);
 };
 
-/* The window the server waits before marking a call missed. If this test and
-   backend/src/sockets/call.handlers.js ever disagree, the ring stops early. */
-const RING_WINDOW = 45;
+/* A ringtone has no length of its own — it rings until something stops it. This
+   is well past any call the server would still consider ringing, so it stands
+   for "indefinitely". */
+const A_LONG_RING = 300;
 
-await check('the ringtone covers the whole window a call rings for', () => {
+/* Chrome's background timer floor, mirrored from lib/sound. The ring's horizon
+   has to outlast it, which is what the throttling case below checks. */
+const WORST_THROTTLE = 60;
+
+await check('the ringtone keeps ringing for as long as the call does', () => {
   reset();
   const stop = audio.sounds.ring();
 
-  const starts = scheduled.map((o) => o.startedAt).sort((a, b) => a - b);
-  assert(starts.length > 0, 'nothing was scheduled at all');
+  const early = scheduled.length;
+  assert(early > 0, 'nothing was scheduled at all');
 
-  const ends = scheduled.map((o) => o.stopAt).filter((t) => t != null);
-  const last = Math.max(...ends);
+  advance(A_LONG_RING);
+
+  const bursts = scheduled.map((o) => o.startedAt).sort((a, b) => a - b);
+  const last = bursts[bursts.length - 1];
   assert(
-    last >= RING_WINDOW,
-    'the ring falls silent at ' + last + 's, before the ' + RING_WINDOW + 's a call rings for'
+    last >= A_LONG_RING,
+    'the ring fell silent at ' + last + 's — it is supposed to be continuous'
   );
 
-  // And it is a cadence, not one long drone: no gap between consecutive bursts
-  // longer than a few seconds, or the phone falls silent mid-ring.
-  const gaps = starts.slice(1).map((t, i) => t - starts[i]);
-  assert(Math.max(...gaps) <= 4.5, 'a ' + Math.max(...gaps) + 's gap in the middle of the ring');
+  // Continuous means no hole in the middle either, not just a late last burst.
+  const gaps = bursts.slice(1).map((t, i) => t - bursts[i]);
+  assert(
+    Math.max(...gaps) <= 4.5,
+    'a ' + Math.max(...gaps).toFixed(1) + 's hole in the middle of a continuous ring'
+  );
 
   stop();
 });
 
-await check('the ringtone vibrates for the same window, in one call', () => {
+await check('the ring survives a tab whose timers are throttled away', () => {
   reset();
   const stop = audio.sounds.ring();
 
-  assert(vibrations.length === 1, 'expected a single vibrate call, got ' + vibrations.length);
-
-  const pattern = vibrations[0];
-  assert(Array.isArray(pattern), 'the pattern is not an on/off array');
-
-  // Handing the whole pattern over at once is what makes this survive a
-  // background tab; a per-cycle timer would be throttled away.
-  const total = pattern.reduce((a, b) => a + b, 0) / 1000;
+  /* The failure this guards against is the original bug in a new form: the
+     top-up is a timer, and a hidden tab may not run it for a minute. What is
+     already on the audio clock has to cover that gap on its own. */
+  const scheduledAhead = Math.max(...scheduled.map((o) => o.startedAt));
   assert(
-    total >= RING_WINDOW,
-    'the vibration covers ' + total + 's, short of the ' + RING_WINDOW + 's ring'
+    scheduledAhead > WORST_THROTTLE,
+    'only ' +
+      scheduledAhead.toFixed(1) +
+      's is queued ahead, which does not outlast the ' +
+      WORST_THROTTLE +
+      's a background timer can be held for'
   );
+
+  advanceThrottled(WORST_THROTTLE);
+  const runway = Math.max(...scheduled.map((o) => o.startedAt)) - now;
+  assert(runway > 0, WORST_THROTTLE + 's of throttling ran the ring dry');
+  // Not merely non-zero: there has to be room for the late top-up to land in.
+  assert(
+    runway >= 20,
+    'only ' + runway.toFixed(1) + 's of ring left after throttling — too tight to recover'
+  );
+
+  stop();
+});
+
+await check('the vibration is re-issued in step, and covers the gap too', () => {
+  reset();
+  const stop = audio.sounds.ring();
+
+  assert(vibrations.length === 1, 'expected one vibrate call to start with');
+  const first = vibrations[0];
+  assert(Array.isArray(first), 'the pattern is not an on/off array');
+  const span = first.reduce((a, b) => a + b, 0) / 1000;
+  assert(span >= 55, 'the vibration covers only ' + span + 's, less than the audio does');
+
+  advance(30);
+  assert(vibrations.length > 1, 'the vibration was never topped up');
+
+  /* Each re-issue replaces the running pattern, so it has to start on the beat
+     rather than immediately — a leading zero-length buzz is how that is done. */
+  const later = vibrations[vibrations.length - 1];
+  assert(later[0] === 0, 'a re-issued pattern buzzes immediately instead of on the beat');
 
   stop();
 });
@@ -286,6 +366,29 @@ await check('answering silences bursts that were already scheduled', () => {
     unstopped.length + ' of ' + count + ' bursts would still sound after answering'
   );
   assert(vibrations[vibrations.length - 1] === 0, 'the vibration was not cancelled');
+});
+
+await check('answering also stops the ring topping itself up', () => {
+  reset();
+  const stop = audio.sounds.ring();
+  stop();
+
+  const after = scheduled.length;
+  const vibrationsAfter = vibrations.length;
+
+  /* The nodes already queued are cancelled by the case above. This is the other
+     half: a top-up that keeps firing would schedule fresh bursts into a call
+     that has been answered for minutes. */
+  advance(A_LONG_RING);
+
+  assert(
+    scheduled.length === after,
+    (scheduled.length - after) + ' new bursts were scheduled after the call was answered'
+  );
+  assert(
+    vibrations.length === vibrationsAfter,
+    'the phone was told to vibrate again after the call was answered'
+  );
 });
 
 await check('a call arriving at an untouched page rings once the page is touched', async () => {

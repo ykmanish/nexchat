@@ -11,6 +11,7 @@ import {
   Video,
   VideoOff,
   Volume2,
+  Ear,
   Minimize2,
   Maximize2,
   MonitorUp,
@@ -27,6 +28,7 @@ import { cn, duration } from '@/lib/utils';
 import { emit } from '@/lib/socket';
 import { sounds, feedback, haptics, canPlayNow } from '@/lib/sound';
 import { CALL_STATUS_BAR, setStatusBarOverride } from '@/lib/theme';
+import * as route from '@/lib/audioroute';
 import { startCall, hasTurn, CALL_STATES } from '@/lib/webrtc';
 
 /**
@@ -53,10 +55,24 @@ export function CallOverlay() {
   const [sharing, setSharing] = useState(false);
   const [peerSharing, setPeerSharing] = useState(false);
   const [peerMuted, setPeerMuted] = useState(false);
+  const [peerVideoOff, setPeerVideoOff] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [minimized, setMinimized] = useState(false);
   const [connection, setConnection] = useState(CALL_STATES.connecting);
   const [remoteStream, setRemoteStream] = useState(null);
+  const [localStream, setLocalStream] = useState(null);
+  /* Whether there is a live remote video track *right now*. Not the same
+     question as "is this a video call": an audio call gains one the moment the
+     other person shares their screen, and a video call loses one when they
+     switch their camera off. Deciding what to render from `call.mode` meant a
+     shared screen on an audio call could never be displayed at all. */
+  const [remoteVideoLive, setRemoteVideoLive] = useState(false);
+  /* Where the sound is going. A call starts at the earpiece — see lib/audioroute
+     for why that is the right default and how far the web lets us enforce it.
+     `canRoute` is whether this device will actually be moved, which decides
+     between a working toggle and one that has to admit it cannot help. */
+  const [speaker, setSpeaker] = useState(false);
+  const [canRoute, setCanRoute] = useState(false);
   const [quality, setQuality] = useState(null);
   const [showMore, setShowMore] = useState(false);
 
@@ -209,65 +225,178 @@ export function CallOverlay() {
       isVideo,
       isCaller: call.direction === 'outgoing',
       onRemoteStream: setRemoteStream,
+      onRemoteTracks: ({ video }) => setRemoteVideoLive(!!video),
       onState: setConnection,
-      onPeerMedia: ({ muted: m }) => {
+      onPeerMedia: ({ muted: m, videoOff: v }) => {
         if (m !== undefined) setPeerMuted(!!m);
+        // Previously dropped on the floor, so a peer turning their camera off
+        // left their last frame frozen on screen for the rest of the call.
+        if (v !== undefined) setPeerVideoOff(!!v);
       },
       onPeerSharing: setPeerSharing,
     });
     engine.current = handle;
 
-    handle.ready.catch(() => {
-      toast.error('Could not access your microphone or camera');
-      hangUp();
-    });
+    handle.ready
+      .then((stream) => {
+        if (engine.current === handle) setLocalStream(stream || null);
+      })
+      .catch(() => {
+        toast.error('Could not access your microphone or camera');
+        hangUp();
+      });
 
     return () => {
       handle.close();
       if (engine.current === handle) engine.current = null;
+      setLocalStream(null);
+      setRemoteVideoLive(false);
+      setPeerVideoOff(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, call?.callId]);
 
-  /* Attach the local preview once both the stream and the element exist. */
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    engine.current?.ready
-      .then((stream) => {
-        if (!cancelled && stream && localVideo.current) {
-          localVideo.current.srcObject = stream;
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+  /**
+   * Attaching streams to elements — by callback ref, not by effect.
+   *
+   * This is where "we can each only see ourselves" came from, and it is worth
+   * spelling out because the effect looked correct. Both remote tracks arrive in
+   * one stream, so `onRemoteStream` is called twice with the *same object*; the
+   * second call sets state to an identical value and React skips the re-render.
+   * Meanwhile the remote `<video>` is conditional, so on a video call the order
+   * was: tracks arrive → stream set while still 'connecting' → no video element
+   * exists yet → the attach effect runs against a null ref and does nothing →
+   * the connection reaches 'connected' → the element finally mounts. And the
+   * effect did not list `connection`, so it never ran again. `srcObject` was
+   * never assigned and the remote video stayed black for the entire call, while
+   * the local preview — a different element, with a different effect — worked
+   * perfectly. Hence each side seeing only itself.
+   *
+   * A callback ref cannot get *that* wrong: it fires when the element mounts,
+   * whatever caused the mount, with no dependency list to forget. It does not
+   * cover the opposite order on its own — see the effects below, which do.
+   */
+  const attach = (stream, { audible = false } = {}) =>
+    function attachTo(el) {
+      if (!el) return;
+      if (stream && el.srcObject !== stream) {
+        el.srcObject = stream;
+        // Autoplay is allowed here — a call is about as clear a user gesture as
+        // it gets — but a rejected play() must not be silent.
+        el.play?.().catch(() => {});
+      }
+      if (!stream && el.srcObject) el.srcObject = null;
+      if (audible) remoteAudio.current = el;
     };
-  }, [active, minimized, isVideo]);
+
+  /* The local preview. Held in state rather than read off the engine promise,
+     so the ref callback below has something synchronous to attach. */
+  const attachLocal = (el) => {
+    localVideo.current = el;
+    if (el && localStream && el.srcObject !== localStream) {
+      el.srcObject = localStream;
+      el.play?.().catch(() => {});
+    }
+  };
+
+  const attachRemoteVideo = (el) => {
+    remoteVideo.current = el;
+    attach(remoteStream)(el);
+  };
 
   /**
-   * Attach the remote stream to both sinks.
+   * And attach again when the *stream* changes under an element already mounted.
    *
-   * Re-run on `minimized` and `isVideo` too, because those remount the video
-   * element — and an element that mounts after the stream arrived would
-   * otherwise stay blank for the rest of the call.
+   * The ref callbacks above cover an element that mounts after its stream
+   * exists. They do not cover the opposite order, and the reason is specific:
+   * the local preview is a `motion.video`, and framer-motion does not re-invoke
+   * a callback ref whose identity changed on a re-render the way a plain
+   * element does. So starting a screen share swapped the stream in state, the
+   * ref never fired again, and you carried on watching your own camera while
+   * the other person watched your screen.
    *
-   * The video element is muted and the audio element is not. One stream, one
-   * place the sound comes from: attaching audio to both would play it twice.
+   * Both mechanisms, then — mount is the ref's job, identity change is this
+   * one's — because each alone has a hole.
    */
   useEffect(() => {
-    if (!remoteStream) return;
-    if (remoteAudio.current && remoteAudio.current.srcObject !== remoteStream) {
-      remoteAudio.current.srcObject = remoteStream;
-      // Autoplay is allowed here: a call is about as clear a user gesture as
-      // it gets, but a rejected play() must not be silent.
-      remoteAudio.current.play?.().catch(() => {});
+    const el = localVideo.current;
+    if (el && localStream && el.srcObject !== localStream) {
+      el.srcObject = localStream;
+      el.play?.().catch(() => {});
     }
-    if (remoteVideo.current && remoteVideo.current.srcObject !== remoteStream) {
-      remoteVideo.current.srcObject = remoteStream;
-      remoteVideo.current.play?.().catch(() => {});
+  }, [localStream, sharing, videoOff, isVideo, minimized]);
+
+  useEffect(() => {
+    [remoteVideo.current, remoteAudio.current].forEach((el) => {
+      if (el && remoteStream && el.srcObject !== remoteStream) {
+        el.srcObject = remoteStream;
+        el.play?.().catch(() => {});
+      }
+    });
+  }, [remoteStream, remoteVideoLive, peerVideoOff, minimized]);
+
+  /**
+   * Put the call on the earpiece, and keep it where the user put it.
+   *
+   * Runs once the remote audio element has a stream, because output labels are
+   * empty until microphone permission has been granted — before that there is
+   * nothing to recognise an earpiece by. Re-runs when the devices change, which
+   * is what plugging in headphones looks like: the route is re-applied so a call
+   * does not jump back to the speaker behind your back.
+   */
+  useEffect(() => {
+    if (!active || !remoteStream) return undefined;
+
+    let cancelled = false;
+
+    const apply = async () => {
+      const switchable = await route.canSwitch();
+      if (cancelled) return;
+      setCanRoute(switchable);
+      if (!switchable) return;
+
+      const got = await route.routeTo(remoteAudio.current, speaker ? 'speaker' : 'earpiece');
+      if (!cancelled && got) setSpeaker(got === 'speaker');
+    };
+
+    apply();
+    const unwatch = route.watchDevices(apply);
+
+    return () => {
+      cancelled = true;
+      unwatch();
+    };
+    // `speaker` is applied by toggleSpeaker itself; re-running here on every
+    // press would fight it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, remoteStream]);
+
+  /**
+   * Speakerphone on or off.
+   *
+   * The button reports what happened rather than what was asked for. Where the
+   * browser will not move the audio there is no honest "on" state to show, so it
+   * says so instead of lighting up over a sound that has not moved.
+   */
+  async function toggleSpeaker() {
+    if (!canRoute) {
+      toast.info(
+        route.supported()
+          ? 'This device does not let a browser choose the earpiece or the speaker.'
+          : 'This browser cannot switch audio output — your phone decides.'
+      );
+      return;
     }
-  }, [remoteStream, minimized, isVideo, peerSharing]);
+
+    const want = speaker ? 'earpiece' : 'speaker';
+    const got = await route.routeTo(remoteAudio.current, want);
+    if (got) {
+      setSpeaker(got === 'speaker');
+    } else {
+      setCanRoute(false);
+      toast.error('Could not move the audio to the ' + want + '.');
+    }
+  }
 
   /* ── quality pip ── */
   useEffect(() => {
@@ -322,6 +451,11 @@ export function CallOverlay() {
     feedback('tap');
   }
 
+  /* `getDisplayMedia` simply does not exist on a phone browser — there is no
+     window list to pick from. The button stays visible and disabled rather than
+     vanishing, and says why when you press it, because a control that is present
+     on the desktop and absent on the phone is more confusing than one that
+     explains itself. */
   const canShare =
     typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 
@@ -331,9 +465,19 @@ export function CallOverlay() {
    * The screen replaces whatever the existing video sender is carrying, so
    * there is no second offer and no visible pause. An audio call has no video
    * sender, so one is added — and the engine's renegotiation handles that case.
+   *
+   * The local preview goes through `setLocalStream` rather than being poked into
+   * the element directly. Assigning `srcObject` by hand fights the ref callback:
+   * the next render re-attaches whatever the state says, so a hand-assigned
+   * screen would be replaced by the camera again a frame later.
    */
   async function toggleShare() {
     if (!engine.current) return;
+
+    if (!canShare) {
+      toast.info('Screen sharing needs a desktop browser — phones cannot share a screen.');
+      return;
+    }
 
     if (sharing) {
       screenStream.current?.getTracks().forEach((t) => t.stop());
@@ -341,9 +485,7 @@ export function CallOverlay() {
       await engine.current.setVideoTrack(cameraTrack.current || null);
       setSharing(false);
       emit('call:screen-share', { callId: call.callId, on: false });
-      if (localVideo.current) {
-        localVideo.current.srcObject = engine.current.localStream();
-      }
+      setLocalStream(engine.current.localStream());
       return;
     }
 
@@ -366,7 +508,7 @@ export function CallOverlay() {
       // The browser's own "stop sharing" bar has to end it too.
       track.onended = () => toggleShare();
 
-      if (localVideo.current) localVideo.current.srcObject = stream;
+      setLocalStream(stream);
     } catch {
       /* The picker was dismissed. Nothing to report. */
     }
@@ -376,7 +518,28 @@ export function CallOverlay() {
 
   const ringing = call.status === 'ringing';
   const incoming = ringing && call.direction === 'incoming';
-  const showRemoteVideo = isVideo && !!remoteStream && connection !== CALL_STATES.connecting;
+  /**
+   * Whether to show the far end's picture.
+   *
+   * Three terms, each answering a different question, because no one of them is
+   * enough:
+   *
+   *   - `remoteVideoLive` — is there actually a video track? The ground truth,
+   *     read from the receivers rather than guessed from the call's mode.
+   *   - `!peerVideoOff` — have they turned their camera off? They say so
+   *     explicitly, and their last frame must not stay frozen on screen.
+   *   - `isVideo || peerSharing` — is video part of this call at all? Stopping a
+   *     share replaces the sent track with nothing, which mutes the receiver's
+   *     track without ending it — so the track stays "live" and, on an audio
+   *     call, the peer would go on staring at the final frame of a screen that
+   *     is no longer being shared.
+   *
+   * The old condition was `isVideo && connection !== 'connecting'`, which failed
+   * in two directions at once: a screen shared into an audio call could never be
+   * rendered, and a video call whose tracks arrived before the connection state
+   * caught up rendered nothing and never looked again.
+   */
+  const showRemoteVideo = remoteVideoLive && !peerVideoOff && (isVideo || peerSharing);
 
   /* What the line under the name says. It is the one place the call reports
      itself, so it says the true thing rather than always "encrypted". */
@@ -445,11 +608,11 @@ export function CallOverlay() {
 
         {/* Remote audio. Always mounted, never laid out — the sound must not
             depend on which visual branch happens to be rendered. */}
-        <audio ref={remoteAudio} autoPlay playsInline className="hidden" />
+        <audio ref={attach(remoteStream, { audible: true })} autoPlay playsInline className="hidden" />
 
         {showRemoteVideo && (
           <video
-            ref={remoteVideo}
+            ref={attachRemoteVideo}
             autoPlay
             playsInline
             muted
@@ -533,9 +696,12 @@ export function CallOverlay() {
             </div>
 
             {/* ── local preview ── */}
-            {isVideo && active && !videoOff && (
+            {/* Your own picture: the camera on a video call, or the screen you
+                are sharing — which on an audio call is the only local video
+                there is, and used never to be shown at all. */}
+            {active && localStream && ((isVideo && !videoOff) || sharing) && (
               <motion.video
-                ref={localVideo}
+                ref={attachLocal}
                 autoPlay
                 playsInline
                 muted
@@ -579,10 +745,18 @@ export function CallOverlay() {
                   <>
                     <div className="grid grid-cols-3 gap-2">
                       <ControlButton
-                        icon={Volume2}
+                        icon={speaker ? Volume2 : Ear}
                         label="Speaker"
-                        tone="idle"
-                        onClick={() => toast.info('Output switching is up to your device')}
+                        tone={speaker ? 'on' : 'idle'}
+                        unavailable={!canRoute}
+                        hint={
+                          canRoute
+                            ? speaker
+                              ? 'On speaker — tap for the earpiece'
+                              : 'On the earpiece — tap for speaker'
+                            : 'This device chooses its own output'
+                        }
+                        onClick={toggleSpeaker}
                       />
                       <ControlButton
                         icon={videoOff || !isVideo ? VideoOff : Video}
@@ -776,14 +950,30 @@ const TONES = {
 };
 
 /** One labelled control. The label is why you do not have to guess mid-call. */
-function ControlButton({ icon: Icon, label, tone = 'idle', onClick, disabled, pulse }) {
+function ControlButton({
+  icon: Icon,
+  label,
+  tone = 'idle',
+  onClick,
+  disabled,
+  /* Looks unavailable but still answers a tap, so it can say *why* it is
+     unavailable. A control that is simply inert leaves you pressing it and
+     wondering whether the app heard you — which is what a dimmed Share button
+     on a phone was doing. */
+  unavailable,
+  pulse,
+  hint,
+}) {
+  const dead = disabled && !unavailable;
   return (
     <div className="flex flex-col items-center gap-2">
       <motion.button
         type="button"
         aria-label={label}
-        disabled={disabled}
-        whileTap={disabled ? undefined : { scale: 0.9 }}
+        aria-disabled={dead || unavailable || undefined}
+        title={hint || label}
+        disabled={dead}
+        whileTap={dead ? undefined : { scale: 0.9 }}
         animate={pulse ? { scale: [1, 1.06, 1] } : { scale: 1 }}
         transition={
           pulse
@@ -791,14 +981,15 @@ function ControlButton({ icon: Icon, label, tone = 'idle', onClick, disabled, pu
             : { type: 'spring', stiffness: 480, damping: 24 }
         }
         onClick={() => {
-          if (disabled) return;
+          if (dead) return;
           feedback('tap');
           onClick?.();
         }}
         className={cn(
           'grid h-[62px] w-[62px] place-items-center rounded-full border transition-colors duration-200',
           TONES[tone],
-          disabled && 'cursor-not-allowed opacity-35'
+          dead && 'cursor-not-allowed opacity-35',
+          unavailable && 'opacity-45'
         )}
       >
         <Icon size={24} strokeWidth={2} />

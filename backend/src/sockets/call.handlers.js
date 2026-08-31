@@ -1,4 +1,5 @@
 import { Call, CallLink, Conversation, Message, User } from '../models/index.js';
+import { presence } from '../services/presence.js';
 import { shortId } from '../utils/ids.js';
 import { logger } from '../utils/logger.js';
 
@@ -15,8 +16,44 @@ export function registerCallHandlers(io, socket) {
       );
       if (!conv) return ack?.({ success: false, message: 'Conversation not found' });
 
-      const callId = 'call_' + shortId();
       const caller = await User.findById(userId).select('name avatar avatarColor');
+
+      const callees = conv.participants.filter(
+        (p) => !p.leftAt && String(p.user._id) !== String(userId)
+      );
+
+      /**
+       * Nobody there is not the same as nobody answering.
+       *
+       * A `call:incoming` addressed to a user with no connected socket goes into
+       * a room with nothing in it. The caller used to watch "Ringing…" for the
+       * full forty-five seconds and then be told the call was missed — for a
+       * phone that was never going to ring, because it was not on. Refusing up
+       * front is both truthful and instant, and it is what the phone network
+       * does: an unreachable number gets told so, not put through to a tone.
+       *
+       * Only when *no* callee is reachable. A group call rings whoever is there.
+       */
+      const reachable = callees.filter((p) => presence.isOnline(p.user._id));
+
+      if (!reachable.length) {
+        const who =
+          conv.type === 'direct'
+            ? callees[0]?.user?.name || 'They'
+            : 'Nobody in ' + (conv.name || 'this group');
+
+        // Logged as missed all the same, so the attempt is in the call history.
+        const missedId = 'call_' + shortId();
+        await logCall(io, conv, userId, missedId, mode, 'missed', 0);
+
+        return ack?.({
+          success: false,
+          code: 'UNREACHABLE',
+          message: who + (conv.type === 'direct' ? ' is offline right now.' : ' is online.'),
+        });
+      }
+
+      const callId = 'call_' + shortId();
 
       await Call.create({
         callId,
@@ -27,11 +64,7 @@ export function registerCallHandlers(io, socket) {
         participants: [{ user: userId, deviceId, joinedAt: new Date() }],
       });
 
-      const callees = conv.participants.filter(
-        (p) => !p.leftAt && String(p.user._id) !== String(userId)
-      );
-
-      callees.forEach((p) =>
+      reachable.forEach((p) =>
         io.to('user:' + p.user._id).emit('call:incoming', {
           callId,
           conversationId: String(conv._id),
@@ -231,6 +264,43 @@ export function registerCallHandlers(io, socket) {
 }
 
 /** Drops a call record into the transcript so it shows up in history. */
+/**
+ * Ends calls that are still ringing at somebody who has just gone offline.
+ *
+ * The other half of refusing a call to an unreachable phone. Presence can drop
+ * *during* the ring — the phone loses signal, the tab is closed, the battery
+ * goes — and the caller was then left listening to a ringback for a device that
+ * had stopped existing, until the forty-five-second timeout finally admitted it.
+ *
+ * Only when nobody left is reachable. A group call carries on ringing at whoever
+ * is still there.
+ */
+export async function endCallsRingingAt(io, userId) {
+  const ringing = await Call.find({ status: 'ringing' })
+    .populate({ path: 'conversation', select: 'participants type name seq lastMessage' })
+    .catch(() => []);
+
+  for (const call of ringing) {
+    const conv = call.conversation;
+    if (!conv) continue;
+
+    const callees = (conv.participants || []).filter(
+      (p) => !p.leftAt && String(p.user) !== String(call.initiator)
+    );
+    if (!callees.some((p) => String(p.user) === String(userId))) continue;
+    if (callees.some((p) => presence.isOnline(p.user))) continue;
+
+    call.status = 'missed';
+    call.endedAt = new Date();
+    await call.save().catch(() => {});
+
+    io.to('conversation:' + conv._id).emit('call:ended', {
+      callId: call.callId,
+      reason: 'unreachable',
+    });
+  }
+}
+
 async function logCall(io, conv, initiatorId, callId, mode, status, duration) {
   if (!conv) return;
 

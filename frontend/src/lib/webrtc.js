@@ -131,6 +131,7 @@ export function startCall({
   isVideo,
   isCaller,
   onRemoteStream,
+  onRemoteTracks,
   onState,
   onPeerMedia,
   onPeerSharing,
@@ -261,9 +262,42 @@ export function startCall({
     /* The remote stream goes out as data. The old code assigned it straight to
        a DOM ref, which was null whenever the track beat React to the paint —
        and the stream was then lost for the rest of the call. */
+
+    /**
+     * What the far end is actually sending, reported from the receivers.
+     *
+     * The UI needs this separately from the stream, and it has to come from
+     * here. Both remote tracks arrive inside one `MediaStream`, so the stream's
+     * identity never changes and a listener on it fires only once — and
+     * `addtrack` does not fire at all for tracks the WebRTC stack puts there
+     * itself, which is a detail that quietly defeats watching the stream. The
+     * receivers are the authority: `ontrack` fires once per track, whenever it
+     * arrives, including a screen share added mid-call.
+     *
+     * Deliberately not gated on `track.muted`. A remote track can start muted
+     * and only unmute once it is attached to a playing element — so refusing to
+     * render until it unmutes is a deadlock where nothing ever renders. Whether
+     * the other person has switched their camera off is a different question,
+     * and they say so explicitly over `call:media-state`.
+     */
+    const reportTracks = () => {
+      if (closed || !pc) return;
+      const live = (kind) =>
+        pc
+          .getReceivers()
+          .some((r) => r.track?.kind === kind && r.track.readyState === 'live');
+      onRemoteTracks?.({ video: live('video'), audio: live('audio') });
+    };
+
     pc.ontrack = (e) => {
       const stream = e.streams[0];
       if (stream) onRemoteStream?.(stream);
+
+      // `ended` is the one that matters for a screen share being stopped.
+      ['mute', 'unmute', 'ended'].forEach((ev) =>
+        e.track?.addEventListener(ev, reportTracks)
+      );
+      reportTracks();
     };
 
     pc.onicecandidate = (e) => {

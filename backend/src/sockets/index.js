@@ -7,7 +7,7 @@ import { User, Device, Conversation } from '../models/index.js';
 import { pushTyping } from '../services/push.js';
 import { setIO } from './io.js';
 import { registerMessageHandlers } from './message.handlers.js';
-import { registerCallHandlers } from './call.handlers.js';
+import { registerCallHandlers, endCallsRingingAt } from './call.handlers.js';
 
 export function initSockets(httpServer) {
   const io = new Server(httpServer, {
@@ -204,6 +204,12 @@ export function initSockets(httpServer) {
             presence: 'offline',
             lastSeen: new Date(),
           })
+        );
+
+        /* A phone that has gone cannot still be ringing. Without this the
+           caller keeps hearing a ringback until the auto-miss timer fires. */
+        endCallsRingingAt(io, userId).catch((err) =>
+          logger.error('endCallsRingingAt — ' + err.message)
         );
       }
     });

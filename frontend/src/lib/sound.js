@@ -189,6 +189,7 @@ function tone({
   sweepTo = null,
   attack = 0.006,
   bus = 'ui',
+  at = null,
 } = {}) {
   const c = audio();
   const ring = bus === 'ring';
@@ -196,7 +197,11 @@ function tone({
   if (ring ? !ringEnabled : !enabled) return null;
   if (c.state === 'suspended') c.resume().catch(() => {});
 
-  const start = c.currentTime + delay;
+  /* `at` is an absolute point on the audio clock, for the ring scheduler, which
+     works in beats rather than in offsets from whenever it happened to run.
+     Never in the past: a start time behind `currentTime` plays immediately and
+     would bunch a whole cycle into one instant. */
+  const start = at != null ? Math.max(at, c.currentTime) : c.currentTime + delay;
   const osc = c.createOscillator();
   const env = c.createGain();
 
@@ -212,6 +217,8 @@ function tone({
   env.connect(ring ? ringBus : master);
   osc.start(start);
   osc.stop(start + duration + 0.02);
+  // When it plays, so the ring scheduler can drop nodes that are already done.
+  osc.__at = start;
   return osc;
 }
 
@@ -284,15 +291,90 @@ export const haptics = {
   ringtone: () => buzz([500, 240, 500]),
 };
 
-/* The ringtone's cadence, and how much of it is scheduled up front.
-   45 seconds is what the server waits before it marks a call missed
-   (`call:start` in backend/src/sockets/call.handlers.js), so the ring is laid
-   down to cover that window and never needs a refill. */
-const RING_CYCLE = 4;
-/* One cycle past the timeout rather than exactly up to it: a ring that ends on
-   the same second the server gives up leaves a beat of silence that reads as
-   the call having been answered. */
-const RING_CYCLES = 13;
+/* ─────────────────── the ringing scheduler ───────────────────
+ *
+ * A ringtone rings until something stops it. It has no length of its own, so
+ * nothing here picks one: the cadence is laid onto the audio clock a horizon at
+ * a time and topped up, and it goes on until the call is answered, refused or
+ * given up on.
+ *
+ * The horizon has to be longer than the worst throttling, not merely longer
+ * than the top-up interval. Both `setInterval` and `setTimeout` are throttled in
+ * a background tab, and Chrome's floor is one call per minute — which is exactly
+ * the tab a phone rings in. A sixty-second horizon topped up every fifteen
+ * seconds sounds like plenty and is not: one minute of throttling consumes all
+ * sixty seconds and the ring falls silent at the moment it runs out. Two minutes
+ * queued ahead leaves a full minute of runway even then, and the audio clock
+ * itself is never throttled, so whatever is already scheduled plays on time.
+ */
+const RING_CYCLE = 4; // seconds: two bursts, then a pause
+const RING_HORIZON = 120; // seconds of cadence kept queued ahead
+const RING_TOPUP_MS = 20_000;
+/* Chrome's background timer floor. The horizon must comfortably exceed it, and
+   the ringtone test asserts exactly that. */
+const WORST_THROTTLE = 60;
+
+/**
+ * Rings `burst` on the beat, forever, and returns a stop function.
+ *
+ * `burst(at)` is handed an absolute audio-clock time and returns the nodes it
+ * scheduled, so they can be cancelled the moment somebody picks up — bursts
+ * already queued would otherwise sound into an answered call.
+ *
+ * `pattern` is one cycle of vibration, or null for a ring that should not buzz.
+ */
+function ringLoop(burst, pattern) {
+  const c = audio();
+  if (!c) return () => {};
+
+  let live = [];
+  let nextAt = c.currentTime;
+  let timer = null;
+  let stopped = false;
+
+  const fill = () => {
+    if (stopped) return;
+    const horizon = c.currentTime + RING_HORIZON;
+
+    while (nextAt < horizon) {
+      live.push(...burst(nextAt));
+      nextAt += RING_CYCLE;
+    }
+
+    // Anything whose time has passed can be forgotten, so a long ring does not
+    // accumulate a node per burst for as long as it lasts.
+    live = live.filter((n) => n && n.__at >= c.currentTime - RING_CYCLE);
+
+    if (pattern) {
+      /* Re-issued rather than extended: `navigator.vibrate` replaces whatever
+         is running, so each top-up hands over a fresh pattern. The leading
+         zero-length buzz is how a pattern is made to start on the next beat
+         instead of immediately, which keeps the buzz in step with the sound
+         across the seam. */
+      const untilNextBeat = Math.max(0, nextAt - RING_CYCLE - c.currentTime);
+      const full = [0, Math.round(untilNextBeat * 1000)];
+      for (let i = 0; i < Math.ceil(RING_HORIZON / RING_CYCLE); i += 1) full.push(...pattern);
+      buzz(full);
+    }
+  };
+
+  fill();
+  timer = setInterval(fill, RING_TOPUP_MS);
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+    live.forEach((n) => {
+      try {
+        n?.stop();
+      } catch {
+        /* already finished — nothing to stop */
+      }
+    });
+    live = [];
+    if (pattern) buzz(0);
+  };
+}
 
 export const sounds = {
   /** Soft tick under every button press. */
@@ -383,64 +465,37 @@ export const sounds = {
   /**
    * The ringtone for an incoming call. Returns a stop function.
    *
-   * Scheduled on the audio clock rather than driven by `setInterval`, which is
-   * the fix for a ringtone that used to die a few seconds in: a background tab
-   * has its timers throttled hard — to once a minute, eventually — so a ring
-   * built out of intervals rings twice and then gives up, in exactly the case
-   * where a phone most needs to keep ringing. Web Audio's own clock is never
-   * throttled, so the full cadence is laid down in advance and cancelled on
-   * answer.
-   *
-   * Two bell bursts, then a pause; a four-second cycle, repeated across the
-   * whole window the server will wait before marking the call missed.
+   * Rings until it is stopped — see `ringLoop` for why it is scheduled on the
+   * audio clock rather than driven by a timer, and why it never runs out. Two
+   * bell bursts, then a pause; a four-second beat.
    */
   ring: () => {
     if (!ringEnabled) return () => {};
 
-    return whenAudible(() => {
-      const scheduled = [];
-      const burst = (at) => {
-        // The chord under it is what makes this read as a *ring* rather than as
-        // a loud version of the message tone: a fifth below, and a soft
-        // triangle body carrying most of the level.
-        scheduled.push(
-          tone({ freq: 880, duration: 0.42, gain: 0.5, delay: at, bus: 'ring' }),
-          tone({ freq: 1174, duration: 0.42, gain: 0.34, delay: at + 0.02, bus: 'ring' }),
-          tone({ freq: 587, duration: 0.46, gain: 0.2, delay: at, type: 'triangle', bus: 'ring' }),
-          tone({ freq: 880, duration: 0.42, gain: 0.5, delay: at + 0.56, bus: 'ring' }),
-          tone({ freq: 1174, duration: 0.42, gain: 0.34, delay: at + 0.58, bus: 'ring' }),
+    return whenAudible(() =>
+      ringLoop(
+        (at) => [
+          /* The chord under it is what makes this read as a *ring* rather than
+             as a loud version of the message tone: a fifth below, and a soft
+             triangle body carrying part of the level. */
+          tone({ freq: 880, duration: 0.42, gain: 0.5, at, bus: 'ring' }),
+          tone({ freq: 1174, duration: 0.42, gain: 0.34, at: at + 0.02, bus: 'ring' }),
+          tone({ freq: 587, duration: 0.46, gain: 0.2, at, type: 'triangle', bus: 'ring' }),
+          tone({ freq: 880, duration: 0.42, gain: 0.5, at: at + 0.56, bus: 'ring' }),
+          tone({ freq: 1174, duration: 0.42, gain: 0.34, at: at + 0.58, bus: 'ring' }),
           tone({
             freq: 587,
             duration: 0.46,
             gain: 0.2,
-            delay: at + 0.56,
+            at: at + 0.56,
             type: 'triangle',
             bus: 'ring',
-          })
-        );
-      };
-
-      for (let i = 0; i < RING_CYCLES; i += 1) burst(i * RING_CYCLE);
-
-      // One vibration call, not one per cycle. `navigator.vibrate` takes an
-      // arbitrarily long on/off pattern, so the entire ring is handed over in a
-      // single call — which, like the audio clock above, sidesteps background
-      // timer throttling completely.
-      const pattern = [];
-      for (let i = 0; i < RING_CYCLES; i += 1) pattern.push(500, 240, 500, 2760);
-      buzz(pattern);
-
-      return () => {
-        scheduled.forEach((osc) => {
-          try {
-            osc?.stop();
-          } catch {
-            /* already finished — nothing to stop */
-          }
-        });
-        buzz(0);
-      };
-    });
+          }),
+        ],
+        // One cycle of buzz, in step with the two bursts above.
+        [500, 240, 500, 2760]
+      )
+    );
   },
 
   /**
@@ -448,31 +503,21 @@ export const sounds = {
    *
    * Quieter and plainer than the ringtone on purpose: this one is held against
    * an ear, and its whole job is to say the line is open and nobody has picked
-   * up yet. Same audio-clock scheduling, and no vibration — your own phone
-   * buzzing at you while you wait would be nonsense.
+   * up yet. No vibration — your own phone buzzing at you while you wait would
+   * be nonsense.
    */
   dial: () => {
     if (!ringEnabled) return () => {};
 
-    return whenAudible(() => {
-      const scheduled = [];
-      for (let i = 0; i < RING_CYCLES; i += 1) {
-        const at = i * RING_CYCLE;
-        scheduled.push(
-          tone({ freq: 440, duration: 0.8, gain: 0.22, delay: at, bus: 'ring' }),
-          tone({ freq: 480, duration: 0.8, gain: 0.16, delay: at, bus: 'ring' })
-        );
-      }
-      return () => {
-        scheduled.forEach((osc) => {
-          try {
-            osc?.stop();
-          } catch {
-            /* already finished */
-          }
-        });
-      };
-    });
+    return whenAudible(() =>
+      ringLoop(
+        (at) => [
+          tone({ freq: 440, duration: 0.8, gain: 0.22, at, bus: 'ring' }),
+          tone({ freq: 480, duration: 0.8, gain: 0.16, at, bus: 'ring' }),
+        ],
+        null
+      )
+    );
   },
 
   /**

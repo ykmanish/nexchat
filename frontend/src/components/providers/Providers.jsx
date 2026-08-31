@@ -448,7 +448,22 @@ function SocketBridge() {
       'call:ended': ({ callId, reason } = {}) => {
         const call = useUI.getState().call;
         if (!call || (callId && call.callId !== callId)) return;
-        feedback(reason === 'missed' ? 'declined' : 'hangup');
+
+        /* Say which kind of ending this was. A call that stops because the other
+           phone dropped off the network is not a call that was hung up, and
+           hearing the hang-up tone for it leaves you thinking they cut you
+           off. */
+        const outgoing = call.direction === 'outgoing';
+        if (reason === 'unreachable' && outgoing) {
+          useUI.getState().toast(
+            (call.from?.name || 'They') + ' went offline.',
+            { type: 'info' }
+          );
+        } else if (reason === 'missed' && outgoing) {
+          useUI.getState().toast('No answer', { type: 'info' });
+        }
+
+        feedback(reason === 'missed' || reason === 'unreachable' ? 'declined' : 'hangup');
         useUI.getState().endCall();
       },
     };

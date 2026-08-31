@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
-import { useUI } from '@/store/ui';
+import { useUI, toast } from '@/store/ui';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/Button';
 import { EmptyState } from '@/components/chat/EmptyState';
@@ -65,7 +65,13 @@ export default function CallsPage() {
       conversationId: conversation._id,
       mode,
     }).catch(() => null);
-    if (!res?.success) return;
+
+    // Say why, rather than appearing to ignore the tap. See ThreadHeader.
+    if (!res?.success) {
+      feedback('declined');
+      toast.info(res?.message || 'Could not start the call.');
+      return;
+    }
 
     setCall({
       callId: res.callId,

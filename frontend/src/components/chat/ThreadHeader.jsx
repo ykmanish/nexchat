@@ -22,7 +22,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/Button';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { useChat } from '@/store/chat';
-import { useUI } from '@/store/ui';
+import { useUI, toast } from '@/store/ui';
 import { lastSeenLabel, cn } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 import { emitAsync } from '@/lib/socket';
@@ -65,7 +65,15 @@ export function ThreadHeader({ conversation, onBack }) {
     const res = await emitAsync('call:start', { conversationId: conversation._id, mode }).catch(
       () => null
     );
-    if (!res?.success) return;
+
+    /* A refusal has to be said out loud. This used to return in silence, so
+       pressing call when the other person was offline looked exactly like
+       pressing a button that did nothing. */
+    if (!res?.success) {
+      feedback('declined');
+      toast.info(res?.message || 'Could not start the call.');
+      return;
+    }
 
     setCall({
       callId: res.callId,
