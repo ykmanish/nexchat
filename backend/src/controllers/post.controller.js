@@ -656,3 +656,64 @@ export function notify(userId, event, payload, actor) {
 }
 
 export { hydrate, populated, encodeCursor, decodeCursor, olderThan, AUTHOR_FIELDS };
+
+/**
+ * One post, for somebody who is not signed in.
+ *
+ * A shared link that demands an account before it will show anything is a
+ * broken link as far as the person who received it is concerned. Public posts
+ * therefore open for anyone; the reply, like and follow controls are what ask
+ * for an account.
+ *
+ * Deliberately narrow: `audience: 'public'` only, no viewer state, and none of
+ * the counts an author chose to hide. Anything else needs a session.
+ */
+export const sharedPost = asyncHandler(async (req, res) => {
+  const post = await populated(Post.findById(req.params.id));
+  if (!post || post.deletedAt) throw ApiError.notFound('Post not found', 'NO_POST');
+
+  // A signed-in reader gets the ordinary shape, with their own likes and saves.
+  if (req.user) {
+    const [shaped] = await hydrate([post], req.user);
+    return res.json({ success: true, post: shaped, viewerSignedIn: true });
+  }
+
+  if (post.audience !== 'public') {
+    throw ApiError.forbidden('This post is not public', 'NOT_PUBLIC');
+  }
+
+  const shape = (p) =>
+    p && {
+      _id: String(p._id),
+      author: p.author && {
+        _id: String(p.author._id),
+        name: p.author.name,
+        username: p.author.username,
+        avatar: p.author.avatar,
+        avatarColor: p.author.avatarColor,
+      },
+      kind: p.kind,
+      text: p.text,
+      media: p.media,
+      hashtags: p.hashtags,
+      location: p.location,
+      audience: p.audience,
+      likeCount: p.hideCounts ? null : p.likeCount,
+      commentCount: p.commentCount,
+      repostCount: p.repostCount,
+      commentsDisabled: p.commentsDisabled,
+      editedAt: p.editedAt,
+      createdAt: p.createdAt,
+      // No viewer state to report — there is no viewer.
+      liked: false,
+      saved: false,
+      reposted: false,
+      isMine: false,
+    };
+
+  res.json({
+    success: true,
+    viewerSignedIn: false,
+    post: { ...shape(post), repostOf: post.repostOf ? shape(post.repostOf) : null },
+  });
+});

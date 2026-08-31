@@ -64,15 +64,20 @@ export function AppShell({ children }) {
     if (status === 'authed') registerServiceWorker();
   }, [status]);
 
+  /* A shared post permalink opens for anybody. Somebody who is sent a link
+     and gets a sign-in wall instead of the thing they were sent has, from
+     where they are standing, been sent a broken link. */
+  const isSharedPost = /^\/feed\/[a-f\d]{24}$/i.test(pathname);
+
   useEffect(() => {
-    if (status !== 'guest') return;
+    if (status !== 'guest' || isSharedPost) return;
 
     /* A shared link — a call code especially — is usually opened by someone who
        is not signed in yet. Dropping them on /welcome and forgetting where they
        were headed makes the link look broken, so it travels with them. */
     const isDefault = pathname === '/' || pathname === '/chats' || pathname === '/feed';
     router.replace(isDefault ? '/welcome' : '/welcome?next=' + encodeURIComponent(pathname));
-  }, [status, router, pathname]);
+  }, [status, router, pathname, isSharedPost]);
 
   useEffect(() => {
     if (status === 'authed' && !loaded) {
@@ -185,7 +190,12 @@ export function AppShell({ children }) {
   }
 
   if (status === 'locked') return <UnlockScreen />;
-  if (status !== 'authed') return null;
+
+  /* Bare: no rail, no tab bar, no sheets — none of it has a session to read
+     from. The page itself offers the way in. */
+  if (status !== 'authed') {
+    return isSharedPost ? <div className="app-shell bg-app">{children}</div> : null;
+  }
 
   if (locked === null) {
     return (

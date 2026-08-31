@@ -336,7 +336,7 @@ export function PostOptionsSheet({ open, onClose, post }) {
   const mine = (item) => [
     {
       icon: Pencil,
-      label: 'Edit caption',
+      label: 'Edit post',
       onClick: () => openSheet('editPost', { post: item }),
     },
     {
@@ -460,7 +460,7 @@ export function EditPostSheet({ open, onClose, post }) {
     <Sheet
       open={open}
       onClose={onClose}
-      title="Edit caption"
+      title="Edit post"
       subtitle="Everyone will see that this post was edited."
       size="md"
       footer={
@@ -475,7 +475,7 @@ export function EditPostSheet({ open, onClose, post }) {
               setSaving(true);
               try {
                 await updatePost(post._id, { text });
-                toast.success('Caption updated');
+                toast.success('Post updated');
                 onClose();
               } catch (err) {
                 toast.error(err.message);

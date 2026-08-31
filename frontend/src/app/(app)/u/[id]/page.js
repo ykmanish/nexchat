@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, MessageCircle, Grid3x3, List, Loader2, Settings, UserX } from 'lucide-react';
+import {
+  ArrowLeft,
+  MessageCircle,
+  Grid3x3,
+  List,
+  Loader2,
+  Pencil,
+  Settings,
+  UserX,
+} from 'lucide-react';
 import { useFeed, selectList, countLabel } from '@/store/feed';
 import { useAuth } from '@/store/auth';
 import { useChat } from '@/store/chat';
@@ -103,55 +112,46 @@ export default function ProfilePage() {
             </div>
           ) : (
             <>
-              {/* ── identity ── */}
+              {/* ── identity ──
+                  Stacked on a phone, side-by-side once there is room. The
+                  earlier version put the name, two buttons and three counts on
+                  one wrapping row, which on a narrow screen collapsed into a
+                  ragged pile — the counts ran off the edge and the buttons
+                  landed wherever there happened to be space. Each part now
+                  gets its own line at small widths and only shares one when
+                  the width is actually there. */}
               <section className="px-5 pt-6 sm:px-8">
-                <div className="flex items-center gap-5 sm:gap-10">
+                <div className="flex items-start gap-4 sm:gap-8">
+                  <Avatar
+                    src={profile.avatar}
+                    name={profile.name}
+                    color={profile.avatarColor}
+                    size="xl"
+                    online={profile.presence === 'online'}
+                    className="shrink-0 sm:hidden"
+                  />
                   <Avatar
                     src={profile.avatar}
                     name={profile.name}
                     color={profile.avatarColor}
                     size="2xl"
                     online={profile.presence === 'online'}
-                    className="shrink-0"
+                    className="hidden shrink-0 sm:block"
                   />
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <h2 className="truncate font-display text-[20px] tracking-tight sm:text-[23px]">
-                        {profile.name}
-                      </h2>
-                      {!mine && (
-                        <FollowButton
-                          userId={profile._id}
-                          isFollowing={profile.isFollowing}
-                          size="sm"
-                          showIcon
-                        />
-                      )}
-                      {!mine && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          icon={MessageCircle}
-                          loading={opening}
-                          onClick={message}
-                        >
-                          Message
-                        </Button>
-                      )}
-                      {mine && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => router.push('/settings/profile')}
-                        >
-                          Edit profile
-                        </Button>
-                      )}
-                    </div>
+                    <h2 className="truncate font-display text-[21px] leading-tight tracking-tight sm:text-[24px]">
+                      {profile.name}
+                    </h2>
+                    {profile.username && (
+                      <p className="mt-0.5 truncate text-[13.5px] text-ink-muted">
+                        @{profile.username}
+                      </p>
+                    )}
 
-                    {/* Counts, tappable where tapping them means something. */}
-                    <dl className="mt-3 flex gap-6 text-[13.5px]">
+                    {/* Three even columns, so the numbers line up under each
+                        other instead of drifting with the width of the words. */}
+                    <dl className="mt-4 grid max-w-[320px] grid-cols-3 gap-1">
                       <Stat label="posts" value={profile.postCount} />
                       <Stat
                         label="followers"
@@ -172,6 +172,41 @@ export default function ProfilePage() {
                     {profile.about}
                   </p>
                 )}
+
+                {/* Full-width on a phone, where a thumb is the pointer. */}
+                <div className="mt-5 flex gap-2">
+                  {mine ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={Pencil}
+                      className="flex-1 sm:flex-none"
+                      onClick={() => router.push('/settings/profile')}
+                    >
+                      Edit profile
+                    </Button>
+                  ) : (
+                    <>
+                      <FollowButton
+                        userId={profile._id}
+                        isFollowing={profile.isFollowing}
+                        size="sm"
+                        showIcon
+                        className="flex-1 sm:flex-none"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={MessageCircle}
+                        loading={opening}
+                        className="flex-1 sm:flex-none"
+                        onClick={message}
+                      >
+                        Message
+                      </Button>
+                    </>
+                  )}
+                </div>
               </section>
 
               {/* ── view switch ── */}
@@ -257,19 +292,18 @@ export default function ProfilePage() {
 function Stat({ label, value, onClick }) {
   const content = (
     <>
-      <dd className="font-semibold tabular-nums">{countLabel(value ?? 0) || 0}</dd>
-      <dt className="text-ink-muted">{label}</dt>
+      <dd className="text-[17px] font-semibold leading-tight tabular-nums">
+        {countLabel(value ?? 0) || 0}
+      </dd>
+      <dt className="mt-0.5 text-[12.5px] text-ink-muted">{label}</dt>
     </>
   );
 
-  if (!onClick) return <div className="flex items-baseline gap-1.5">{content}</div>;
+  const shape = 'flex flex-col items-start rounded-lg py-1 pr-2 text-left';
+  if (!onClick) return <div className={shape}>{content}</div>;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-baseline gap-1.5 transition-opacity hover:opacity-70"
-    >
+    <button type="button" onClick={onClick} className={cn(shape, 'transition-opacity hover:opacity-70')}>
       {content}
     </button>
   );

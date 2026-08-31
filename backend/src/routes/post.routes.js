@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import * as post from '../controllers/post.controller.js';
 import * as comment from '../controllers/comment.controller.js';
-import { authenticate, requireVerified } from '../middleware/auth.js';
+import { authenticate, optionalAuth, requireVerified } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as v from '../validators/index.js';
 
 const router = Router();
+
+/* Registered ahead of the session gate on purpose: a shared post has to open
+   for whoever was sent the link, account or not. It answers with a public post
+   and nothing else — see sharedPost. */
+router.get('/:id/shared', optionalAuth, post.sharedPost);
+
 router.use(authenticate, requireVerified);
 
 /* Fixed segments before `/:id`, or Express hands "feed" to getPost as an id. */

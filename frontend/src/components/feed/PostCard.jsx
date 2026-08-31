@@ -8,7 +8,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useFeed, countLabel } from '@/store/feed';
 import { mediaUrl } from '@/lib/api';
 import { useUI } from '@/store/ui';
-import { feedTime, firstLink } from '@/lib/feedtext';
+import { feedTime, firstLink, withoutLink } from '@/lib/feedtext';
 import { cn } from '@/lib/utils';
 import { PostMedia } from './PostMedia';
 import { PostText } from './PostText';
@@ -36,7 +36,16 @@ const AUDIENCE = {
  * anywhere in it, and without this every card in the list re-renders to update
  * one heart.
  */
-export const PostCard = memo(function PostCard({ post, priority = false, onOpenPost }) {
+export const PostCard = memo(function PostCard({
+  post,
+  priority = false,
+  onOpenPost,
+  /* Rendered for somebody with no session — a shared link opened by a
+     stranger. Everything still shows; every control asks them to sign in
+     rather than failing with a 401 they cannot act on. */
+  readOnly = false,
+  onRequireAuth,
+}) {
   const router = useRouter();
   const openSheet = useUI((s) => s.openSheet);
   const openLightbox = useUI((s) => s.openLightbox);
@@ -51,13 +60,18 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
   const media = body.media || [];
   const hasMedia = media.length > 0;
   const linkUrl = firstLink(body.text);
+  /* The card carries the link, so the URL comes out of the words above it.
+     Whatever was written around it stays. */
+  const showsLinkCard = !hasMedia && !!linkUrl;
+  const bodyText = showsLinkCard ? withoutLink(body.text, linkUrl) : body.text;
 
   const openAuthor = useCallback(
     (e) => {
       e?.stopPropagation();
+      if (readOnly) return onRequireAuth?.();
       router.push('/u/' + body.author?._id);
     },
-    [router, body.author?._id]
+    [router, body.author?._id, readOnly, onRequireAuth]
   );
 
   const openPost = useCallback(() => {
@@ -67,7 +81,13 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
 
   /* Like on the *original* when this is a plain boost — hearting a repost is
      a heart for the thing that was reposted, not for the act of reposting. */
-  const like = useCallback(() => toggleLike(body._id), [toggleLike, body._id]);
+  const like = useCallback(
+    () => (readOnly ? onRequireAuth?.() : toggleLike(body._id)),
+    [toggleLike, body._id, readOnly, onRequireAuth]
+  );
+
+  /* One door for every control when there is no session behind them. */
+  const guard = (action) => (readOnly ? () => onRequireAuth?.() : action);
 
   const Audience = AUDIENCE[body.audience]?.icon || Globe;
 
@@ -150,7 +170,7 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
           </div>
         </div>
 
-        {!body.author?.isMe && !body.author?.isFollowing && (
+        {!readOnly && !body.author?.isMe && !body.author?.isFollowing && (
           <FollowButton
             userId={body.author?._id}
             isFollowing={body.author?.isFollowing}
@@ -158,6 +178,7 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
           />
         )}
 
+        {!readOnly && (
         <button
           type="button"
           aria-label="Post options"
@@ -169,6 +190,7 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
         >
           <MoreHorizontal size={19} />
         </button>
+        )}
       </header>
 
       {/* ── what ──
@@ -176,13 +198,13 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
           Instagram puts the caption below the photo, which reads as a footnote
           to the image; here a post is one thing you wrote, so it is laid out
           top to bottom in the order you wrote it. */}
-      {!isQuote && body.text && (
+      {!isQuote && bodyText && (
         <div className="px-4 pb-3">
           <PostText
-            text={body.text}
+            text={bodyText}
             /* A short post gets the larger type, unless the short thing is a
                link — a bare URL at 19px is all anybody would see. */
-            size={!hasMedia && !linkUrl && body.text.length < 90 ? 'lg' : 'md'}
+            size={!hasMedia && !linkUrl && bodyText.length < 90 ? 'lg' : 'md'}
             clamp={hasMedia ? 280 : 420}
           />
         </div>
@@ -200,13 +222,14 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
       {/* A link gets a card of its own when there is no photo to look at.
           With media the picture is the subject and a second card below it
           would just be clutter — the link stays live in the text either way. */}
-      {!hasMedia && linkUrl && <PostLinkPreview url={linkUrl} />}
+      {showsLinkCard && <PostLinkPreview url={linkUrl} />}
 
       {hasMedia && (
         <PostMedia
           media={media}
           liked={body.liked}
           onDoubleTapLike={() => {
+            if (readOnly) return onRequireAuth?.();
             if (!body.liked) like();
           }}
           /* The chat lightbox already does everything a viewer needs — swipe,
@@ -238,10 +261,10 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
         <PostActions
           post={body}
           onLike={like}
-          onComment={() => openSheet('comments', { postId: body._id })}
-          onRepost={() => openSheet('repost', { post: body })}
-          onShare={() => openSheet('sharePost', { post: body })}
-          onSave={() => toggleSave(body._id)}
+          onComment={guard(() => openSheet('comments', { postId: body._id }))}
+          onRepost={guard(() => openSheet('repost', { post: body }))}
+          onShare={guard(() => openSheet('sharePost', { post: body }))}
+          onSave={guard(() => toggleSave(body._id))}
         />
       </div>
 
@@ -250,7 +273,7 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
         {body.likeCount > 0 && (
           <button
             type="button"
-            onClick={() => openSheet('postLikes', { postId: body._id })}
+            onClick={guard(() => openSheet('postLikes', { postId: body._id }))}
             className="text-[13.5px] font-semibold hover:underline"
           >
             {countLabel(body.likeCount)} {body.likeCount === 1 ? 'like' : 'likes'}
@@ -260,7 +283,7 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
         {body.commentCount > 0 && !body.commentsDisabled && (
           <button
             type="button"
-            onClick={() => openSheet('comments', { postId: body._id })}
+            onClick={guard(() => openSheet('comments', { postId: body._id }))}
             className="block text-[13.5px] text-ink-faint transition-colors hover:text-ink-muted"
           >
             View {body.commentCount === 1 ? 'the comment' : 'all ' + countLabel(body.commentCount) + ' comments'}

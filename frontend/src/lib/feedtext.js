@@ -85,3 +85,44 @@ export function firstLink(text = '') {
   const found = parseCaption(text).find((part) => part.type === 'link');
   return found ? found.href : null;
 }
+
+/**
+ * The caption with one link taken out of it.
+ *
+ * When a link gets its own preview card, printing the URL above the card as
+ * well says the same thing twice — and the raw form is the uglier of the two.
+ * Only that link goes; anything else written around it stays.
+ */
+export function withoutLink(text = '', href) {
+  if (!href) return text;
+
+  const kept = parseCaption(text)
+    .filter((part) => !(part.type === 'link' && part.href === href))
+    .map((part) => part.value)
+    .join('');
+
+  return kept.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * A caption cut down to something that reads inside a grid square.
+ *
+ * Mostly this is about links: a share URL with a tracking token is longer
+ * than the whole tile and turns it into a wall of characters, so it collapses
+ * to its host.
+ */
+export function tileText(text = '') {
+  return parseCaption(text)
+    .map((part) => (part.type === 'link' ? hostOfLink(part.href) : part.value))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hostOfLink(href) {
+  try {
+    return new URL(href).hostname.replace(/^www\./, '');
+  } catch {
+    return href;
+  }
+}

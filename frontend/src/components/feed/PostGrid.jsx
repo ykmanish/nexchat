@@ -2,9 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Heart, MessageCircle, Images, Play, Type } from 'lucide-react';
+import { Heart, MessageCircle, Images, Play, Quote } from 'lucide-react';
 import { mediaUrl } from '@/lib/api';
 import { countLabel } from '@/store/feed';
+import { tileText } from '@/lib/feedtext';
 import { cn } from '@/lib/utils';
 
 /**
@@ -14,6 +15,14 @@ import { cn } from '@/lib/utils';
  * being dropped from the grid. Half of a fused feed has no picture in it, and a
  * grid that silently skips those posts makes a profile look empty.
  */
+/* A quiet rotation, so a run of text posts is not one flat block of grey.
+   Brand-adjacent rather than decorative — they read as paper, not as labels. */
+const TILE_TINTS = [
+  'bg-surface-2 text-ink-soft',
+  'bg-brand-tint text-ink-soft',
+  'bg-surface-3 text-ink-soft',
+];
+
 export function PostGrid({ posts = [], className }) {
   const router = useRouter();
 
@@ -58,11 +67,21 @@ function Tile({ post, index, onOpen }) {
           />
         </>
       ) : (
-        /* No picture — show the words. */
-        <span className="flex h-full w-full flex-col justify-between p-2.5 text-left sm:p-3">
-          <Type size={14} className="shrink-0 text-ink-faint" />
-          <span className="line-clamp-4 text-[11.5px] font-medium leading-snug text-ink-soft sm:text-[12.5px]">
-            {body.text}
+        /* No picture — the words are the tile.
+           Set like a pull-quote and centred rather than dumped in a corner:
+           a text post is half of what this feed carries, and a grid where
+           those tiles look like leftovers makes a profile look broken. URLs
+           are trimmed, since a raw query string is the one thing guaranteed
+           not to fit. */
+        <span
+          className={cn(
+            'flex h-full w-full flex-col items-center justify-center gap-2 p-3 text-center',
+            TILE_TINTS[index % TILE_TINTS.length]
+          )}
+        >
+          <Quote size={13} className="shrink-0 opacity-35" fill="currentColor" strokeWidth={0} />
+          <span className="line-clamp-5 text-[12px] font-medium leading-[1.45] sm:text-[13px]">
+            {tileText(body.text)}
           </span>
         </span>
       )}

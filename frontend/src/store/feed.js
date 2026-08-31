@@ -122,6 +122,20 @@ export const useFeed = create((set, get) => ({
     return data.post;
   },
 
+  /**
+   * A post by permalink, which may be being read by nobody in particular.
+   *
+   * The `/shared` route answers for a signed-in reader and a stranger alike —
+   * with the viewer's own likes and saves for the first, and a stripped public
+   * shape for the second — so the permalink page has one path through it
+   * rather than a branch at the top.
+   */
+  async loadSharedPost(id) {
+    const { data } = await api.get('/posts/' + id + '/shared');
+    get().mergePosts([data.post]);
+    return data;
+  },
+
   async loadProfile(userId, { refresh = false } = {}) {
     const key = 'profile:' + userId;
     const list = get().lists[key] || EMPTY_LIST;
