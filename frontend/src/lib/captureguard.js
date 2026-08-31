@@ -189,6 +189,33 @@ export function arm() {
   };
 }
 
+/**
+ * Whether this device can be caught taking a screenshot at all.
+ *
+ * On a desktop it can: the OS capture UI steals focus, and PrintScreen,
+ * Win+Shift+S and Cmd+Shift+3/4/5 all arrive as keystrokes before the pixels
+ * are read. On a phone none of that happens — a screenshot does not blur the
+ * page, does not hide it, and there is no key to press. There is no web API
+ * for it either, on Android or iOS.
+ *
+ * This exists so the copy can stop claiming otherwise. Telling somebody the
+ * screen goes black when they take a screenshot, on a device where it plainly
+ * does not, is worse than telling them nothing.
+ */
+export function canDetectCapture() {
+  if (typeof window === 'undefined') return false;
+  // A real keyboard and a fine pointer — that is what "desktop" means here.
+  return window.matchMedia?.('(pointer: fine)').matches ?? false;
+}
+
 /** What the UI is allowed to claim, in one place so it cannot drift. */
 export const CAPTURE_CAVEAT =
   'The screen goes black if this device tries to take a screenshot, but a browser cannot block one outright — and nothing stops a photo of the screen.';
+
+/** The same honesty, for a phone, where the screenshot itself is invisible to us. */
+export const CAPTURE_CAVEAT_TOUCH =
+  'A phone can screenshot this without the browser ever knowing. The chat hides itself when you switch apps, and the other person is told when a capture is detected — but treat anything here as copyable.';
+
+/** Whichever of the two is true on this device. */
+export const captureCaveat = () =>
+  canDetectCapture() ? CAPTURE_CAVEAT : CAPTURE_CAVEAT_TOUCH;

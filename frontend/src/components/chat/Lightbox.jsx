@@ -8,7 +8,7 @@ import { useUI, toast } from '@/store/ui';
 import { useDecryptedMedia } from './Attachment';
 import { IconButton } from '@/components/ui/Button';
 import { feedback } from '@/lib/sound';
-import { arm as armCaptureGuard, CAPTURE_CAVEAT } from '@/lib/captureguard';
+import { arm as armCaptureGuard, captureCaveat } from '@/lib/captureguard';
 
 /** Full-screen media viewer with swipe-to-dismiss. */
 export function Lightbox() {
@@ -126,7 +126,7 @@ export function Lightbox() {
             <div className="safe-bottom px-6 pb-4 pt-3">
               <p className="mx-auto flex max-w-[420px] items-start gap-2 text-[11.5px] leading-relaxed text-white/55">
                 <ShieldAlert size={13} className="mt-0.5 shrink-0" />
-                {CAPTURE_CAVEAT}
+                {captureCaveat()}
               </p>
             </div>
           )}

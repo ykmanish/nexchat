@@ -80,7 +80,10 @@ export function SaveContactBar({ conversation }) {
       className="relative z-[2] shrink-0 border-t border-line bg-surface px-3 py-2.5 sm:px-4"
     >
       <div className="mx-auto flex max-w-[900px] flex-wrap items-center gap-2">
-        <span className="mr-auto min-w-0 flex-1 text-[13px] leading-snug text-ink-muted">
+        {/* Its own line on a phone. `flex-1` beside three shrink-0 buttons
+            left this about one word wide on a 375px screen, so the sentence
+            wrapped a word at a time down the side of them. */}
+        <span className="w-full min-w-0 text-[13px] leading-snug text-ink-muted sm:mr-auto sm:w-auto sm:flex-1">
           <span className="font-medium text-ink">{peer.name}</span> is not in your contacts.
         </span>
 

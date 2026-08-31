@@ -26,7 +26,7 @@ import { Sheet, ConfirmDialog } from '@/components/ui/Sheet';
 import { ListButton, Button } from '@/components/ui/Button';
 import { saveContactMenuItem } from '@/components/chat/SaveContactBar';
 import { Switch, RadioRow } from '@/components/ui/Field';
-import { CAPTURE_CAVEAT } from '@/lib/captureguard';
+import { captureCaveat } from '@/lib/captureguard';
 import { Avatar } from '@/components/ui/Avatar';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
@@ -456,7 +456,7 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
             {/* Said plainly. Somebody turning this on to protect something real
                 deserves to know where the line is rather than to find out. */}
             <p className="mx-4 mt-4 rounded-xl bg-surface-2 px-4 py-3 text-[12px] leading-relaxed text-ink-muted">
-              {CAPTURE_CAVEAT} Forwarding and alerts depend on the other person’s app playing
+              {captureCaveat()} Forwarding and alerts depend on the other person’s app playing
               along — they stop the ordinary case, not a determined one.
             </p>
 
