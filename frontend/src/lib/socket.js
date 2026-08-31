@@ -74,6 +74,32 @@ function reportVisibility() {
   socket.emit('app:visibility', isAttentive() ? 'visible' : 'hidden');
 }
 
+/**
+ * Restates "I am on screen" on a timer.
+ *
+ * The server treats attentiveness as something that expires, because the
+ * alternative is worse: a device that is force-quit, loses signal, or has its
+ * tab frozen never gets to say it went away, so it counted as watching the
+ * screen — and every message skipped its push — until the socket finally timed
+ * out. A heartbeat turns "did it tell us it left" into "is it still telling us
+ * it is here", which is the question that has an answer when a device
+ * disappears without warning.
+ *
+ * Sent only while the page is genuinely being looked at, so a hidden tab stops
+ * the beat by doing nothing rather than by having to report anything. Well
+ * inside the server's window, so an ordinary late tick never demotes a device
+ * somebody is reading.
+ */
+const ATTENTION_BEAT_MS = 20_000;
+let beat = null;
+
+function startAttentionBeat() {
+  clearInterval(beat);
+  beat = setInterval(() => {
+    if (socket?.connected && isAttentive()) socket.emit('app:visibility', 'visible');
+  }, ATTENTION_BEAT_MS);
+}
+
 function watchVisibility() {
   if (visibilityWatched || typeof document === 'undefined') return;
   visibilityWatched = true;
@@ -84,6 +110,8 @@ function watchVisibility() {
   });
   window.addEventListener('focus', reportVisibility);
   window.addEventListener('blur', reportVisibility);
+
+  startAttentionBeat();
 }
 
 /** Connects without a session — used only by the QR device-link screen. */
@@ -97,6 +125,8 @@ export function connectLinkSocket(linkCode) {
 }
 
 export function disconnectSocket() {
+  clearInterval(beat);
+  beat = null;
   socket?.disconnect();
   socket = null;
   pending.length = 0;

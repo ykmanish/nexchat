@@ -156,19 +156,38 @@ export async function reconcileSubscription() {
 
     await navigator.serviceWorker.ready;
 
+    const { data } = await api.get('/devices/vapid-public-key');
+    if (!data.enabled || !data.publicKey) return false;
+
     const existing = await registration.pushManager.getSubscription();
-    if (existing) {
+
+    /**
+     * A subscription is only useful if it was minted with the key the server
+     * is currently signing with.
+     *
+     * This is the second half of a failure that was completely silent. If the
+     * server's VAPID pair changes — a fresh deploy with no keys in `.env`
+     * generates an ephemeral pair on every restart — every stored subscription
+     * is instantly rejected by the push service. The browser still holds a
+     * perfectly valid-looking subscription object, so this function used to
+     * post it back, return true, and report success, while nothing was ever
+     * delivered again. Notifications "worked yesterday" and then stopped, with
+     * nothing in any log and no way for the user to fix it.
+     *
+     * Comparing the keys turns that into something the client repairs by
+     * itself on the next launch.
+     */
+    if (existing && !keyMatches(existing, data.publicKey)) {
+      await existing.unsubscribe().catch(() => {});
+    } else if (existing) {
       // Cheap and idempotent: the server stores it against this device, so a
       // rotated endpoint is corrected without the user doing anything.
       await api.post('/devices/push-subscription', { subscription: existing.toJSON() });
       return true;
     }
 
-    // Permission is granted but there is no subscription — the browser dropped
-    // it. Re-subscribing needs no prompt, so it can be done quietly.
-    const { data } = await api.get('/devices/vapid-public-key');
-    if (!data.enabled || !data.publicKey) return false;
-
+    // Either the browser dropped the subscription or it was signed with a key
+    // the server no longer uses. Re-subscribing needs no prompt.
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(data.publicKey),
@@ -181,6 +200,33 @@ export async function reconcileSubscription() {
 }
 
 /** Hands the API a subscription the worker minted on its own. */
+/**
+ * Whether a subscription was created with this public key.
+ *
+ * `options.applicationServerKey` comes back as an ArrayBuffer of the raw
+ * P-256 point; the server hands out the same bytes as base64url. Compared
+ * byte by byte rather than by re-encoding, because base64url padding differs
+ * between implementations and a false mismatch would re-subscribe on every
+ * single launch.
+ */
+function keyMatches(subscription, publicKey) {
+  const raw = subscription.options?.applicationServerKey;
+  if (!raw || !publicKey) return false;
+
+  try {
+    const mine = new Uint8Array(raw);
+    const theirs = urlBase64ToUint8Array(publicKey);
+    if (mine.length !== theirs.length) return false;
+    for (let i = 0; i < mine.length; i += 1) {
+      if (mine[i] !== theirs[i]) return false;
+    }
+    return true;
+  } catch {
+    // Unreadable — treat as a mismatch and re-subscribe. Cheap and safe.
+    return false;
+  }
+}
+
 export async function adoptSubscription(subscription) {
   if (!subscription) return;
   await api.post('/devices/push-subscription', { subscription }).catch(() => {});

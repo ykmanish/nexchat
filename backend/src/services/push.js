@@ -248,7 +248,7 @@ const typingCooldown = new Map();
 const TYPING_COOLDOWN_MS = 40 * 1000;
 
 export async function pushTyping({ conversation, sender, recipients }) {
-  if (!ready) return;
+  if (!pushReady()) return;
 
   const now = Date.now();
   const key = String(conversation._id) + ':' + String(sender._id);
@@ -339,7 +339,13 @@ export async function pushNewMessage({
   mentioned = new Set(),
   threadRoot = null,
 }) {
-  if (!ready) return;
+  /* `pushReady()`, not `ready`.
+     `ready` is the Web Push flag alone — so a deployment configured with FCM
+     and no VAPID keys returned here on every message and delivered nothing,
+     while `pushToUser` below was perfectly capable of reaching the Android
+     app. Two different readiness checks for one pipeline, and the stricter one
+     was the gate. */
+  if (!pushReady()) return;
 
   /* A secret chat gives a notification nothing to say.
      Not even who wrote — the name on a lock screen is most of what a glance

@@ -18,7 +18,8 @@
     "test:feed": "node scripts/feed.test.mjs",
     "test:secret": "node scripts/secret.test.mjs",
     "test:push": "node scripts/pushdelivery.test.mjs",
-    "test": "npm run test:forensics && npm run test:contacts && npm run test:feed && npm run test:secret && npm run test:push"
+    "test:presence": "node scripts/presence.test.mjs",
+    "test": "npm run test:forensics && npm run test:contacts && npm run test:feed && npm run test:secret && npm run test:presence && npm run test:push"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

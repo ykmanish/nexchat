@@ -320,15 +320,33 @@ await check('two tabs on one device settle on the last report', async () => {
 });
 
 await check('disconnecting forgets the flag', async () => {
-  // Otherwise a device that was hidden when it dropped would come back marked
-  // hidden and get pushes it should not — and the set would leak entries.
+  /* Two things at once, and they used to be in tension.
+     A device that was hidden when it dropped must not come back still marked
+     hidden — the flag has to be cleared, or it gets pushes it should not on its
+     next connection. But a device that has gone is also not watching anything,
+     so it must not count as attentive either.
+
+     The old assertion here read `isForeground === true` after a disconnect,
+     which encoded the bug it was meant to guard: attentiveness was "absence
+     from the hidden set", so anything unknown — including a device that had
+     vanished — was assumed to be looking at the screen, and every message
+     skipped its push. `isForeground` now means "recently said it was on
+     screen", so a gone device is correctly false, and the flag being forgotten
+     is proved by the reconnect below rather than by that reading. */
   socket.emit('app:visibility', 'hidden');
   await settle();
   socket.close();
   await settle();
 
-  assert(presence.isForeground(alice.deviceId), 'the hidden flag outlived the connection');
+  assert(!presence.isForeground(alice.deviceId), 'a disconnected device still counted as watching');
   assert(presence.attentiveDevicesOf(alice.id).length === 0, 'a closed device is still listed');
+
+  // Reconnecting and reporting visible must work — no stale hidden flag left.
+  presence.setForeground(alice.deviceId, true);
+  assert(
+    presence.isForeground(alice.deviceId),
+    'a stale hidden flag survived the disconnect and blocked the device coming back'
+  );
 });
 
 /* ── report ── */

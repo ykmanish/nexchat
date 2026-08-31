@@ -16,8 +16,14 @@ export function initSockets(httpServer) {
       credentials: true,
     },
     maxHttpBufferSize: 12e6,
-    pingTimeout: 25000,
-    pingInterval: 20000,
+    /* How fast a vanished device stops counting as connected.
+       The defaults let a dead socket linger for up to 45 seconds, and a
+       lingering socket is a device presence still believes is watching the
+       screen — so every message in that window skipped its push and the
+       notification never came. Halving it roughly halves the worst case, and
+       two small frames every ten seconds is a price worth paying for that. */
+    pingTimeout: 10000,
+    pingInterval: 10000,
     transports: ['websocket', 'polling'],
   });
 
