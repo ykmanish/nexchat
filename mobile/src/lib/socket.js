@@ -2,6 +2,7 @@ import { AppState } from 'react-native';
 import { io } from 'socket.io-client';
 import { API_ORIGIN } from './config';
 import { tokens } from './api';
+import { report, trace } from './report';
 
 let socket = null;
 const pending = [];
@@ -31,12 +32,18 @@ export function connectSocket(accessToken) {
   });
 
   socket.on('connect', () => {
+    trace('socket:connect', { id: socket.id, queued: pending.length });
     reportVisibility();
     while (pending.length) {
       const { event, payload, ack } = pending.shift();
       socket.emit(event, payload, ack);
     }
   });
+
+  /* A socket that never connects is the difference between "sending is slow"
+     and "sending silently falls back to REST forever", and neither said so. */
+  socket.on('connect_error', (err) => report('socket:connect_error', err));
+  socket.on('disconnect', (reason) => trace('socket:disconnect', { reason }));
 
   watchVisibility();
   return socket;

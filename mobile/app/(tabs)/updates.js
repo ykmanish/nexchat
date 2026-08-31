@@ -6,7 +6,7 @@ import { CircleDashed } from 'lucide-react-native';
 import { useChat } from '../../src/store/chat';
 import { useAuth } from '../../src/store/auth';
 import { Avatar } from '../../src/components/Avatar';
-import { useTheme } from '../../src/theme';
+import { useTheme, font } from '../../src/theme';
 import { shortTime } from '../../src/lib/utils';
 
 /** Stories — 24-hour encrypted updates, grouped into one ring per person. */
@@ -45,8 +45,8 @@ export default function UpdatesScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor={theme.accent}
-          colors={[theme.accent]}
+          tintColor={theme.accentStrong}
+          colors={[theme.accentStrong]}
           progressBackgroundColor={theme.surface3}
         />
       }
@@ -59,7 +59,7 @@ export default function UpdatesScreen() {
         <View>
           <Avatar uri={me?.avatar} name={me?.name} id={me?._id} size={50} />
           <View style={[styles.plus, { backgroundColor: theme.accent, borderColor: theme.surface }]}>
-            <Text style={styles.plusText}>+</Text>
+            <Text style={[styles.plusText, { color: theme.accentInk }]}>+</Text>
           </View>
         </View>
         <View style={styles.rowText}>
@@ -78,7 +78,7 @@ export default function UpdatesScreen() {
               <View
                 style={[
                   styles.ring,
-                  { borderColor: ring.allViewed ? theme.borderStrong : theme.accent },
+                  { borderColor: ring.allViewed ? theme.borderStrong : theme.accentStrong },
                 ]}
               >
                 <Avatar uri={ring.user?.avatar} name={ring.user?.name} id={ring.user?._id} size={46} />
@@ -108,7 +108,7 @@ export default function UpdatesScreen() {
 }
 
 const styles = StyleSheet.create({
-  screenTitle: { fontSize: 27, fontWeight: '800', letterSpacing: -0.6, paddingHorizontal: 20, paddingBottom: 10 },
+  screenTitle: { fontFamily: font.display, fontSize: 27, letterSpacing: -0.55, paddingHorizontal: 20, paddingBottom: 10 },
   sectionTitle: {
     fontSize: 12.5,
     fontWeight: '700',

@@ -11,7 +11,7 @@ export default function RootPage() {
 
   useEffect(() => {
     if (status === 'loading') return;
-    router.replace(status === 'guest' ? '/welcome' : '/chats');
+    router.replace(status === 'guest' ? '/welcome' : '/feed');
   }, [status, router]);
 
   return (

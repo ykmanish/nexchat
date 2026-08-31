@@ -66,6 +66,23 @@ export function seedPreview(preview) {
 }
 
 /** `https://youtu.be/x` → `youtu.be`, for the host line on a card. */
+/**
+ * True for a link that points back at Chax itself — a shared post, a call link.
+ *
+ * These get no preview card. There is nothing for one to say: the destination
+ * is a client-side route, so there are no OG tags behind it and the card
+ * resolves to a bare hostname next to a fallback globe. Sharing a post into a
+ * chat looked like sharing a broken link. The plain link says more.
+ */
+export function isInternalLink(url) {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export function hostOf(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');

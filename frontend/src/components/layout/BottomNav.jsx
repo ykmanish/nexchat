@@ -2,12 +2,13 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { MessageCircle, CircleDashed, Phone, CircleUser } from 'lucide-react';
+import { Home, MessageCircle, CircleDashed, Phone, CircleUser } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 import { useChat } from '@/store/chat';
 
 const TABS = [
+  { href: '/feed', icon: Home, label: 'Feed' },
   { href: '/chats', icon: MessageCircle, label: 'Chats' },
   { href: '/status', icon: CircleDashed, label: 'Updates' },
   { href: '/calls', icon: Phone, label: 'Calls' },
@@ -25,14 +26,14 @@ export function BottomNav() {
 
   return (
     <nav className="safe-bottom relative z-30 shrink-0 border-t border-line bg-surface lg:hidden">
-      <div className="grid grid-cols-4 px-1 pb-2.5 pt-2">
+      <div className="grid grid-cols-5 px-0.5 pb-2.5 pt-2">
         {TABS.map((tab) => (
           <NavTab
             key={tab.href}
             {...tab}
             active={
-              tab.href === '/chats'
-                ? pathname.startsWith('/chats')
+              tab.href === '/feed'
+                ? pathname.startsWith('/feed') || pathname.startsWith('/explore')
                 : pathname.startsWith(tab.href)
             }
             badge={tab.href === '/chats' ? unread : 0}
@@ -55,7 +56,7 @@ function NavTab({ icon: Icon, label, active, badge = 0, onClick }) {
       className="flex flex-col items-center gap-[3px] py-0.5"
     >
       {/* Fixed-size pill so the highlight is identical on every tab. */}
-      <span className="relative grid h-8 w-[58px] place-items-center">
+      <span className="relative grid h-8 w-full max-w-[58px] place-items-center">
         {active && (
           <motion.span
             layoutId="tab-pill"

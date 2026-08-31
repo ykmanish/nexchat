@@ -72,7 +72,7 @@ function VerifyInner() {
       sessionStorage.removeItem('nexchat.pending');
       feedback('success');
       toast.success('Welcome to Chax');
-      router.replace('/chats');
+      router.replace('/feed');
     } catch (err) {
       submittedFor.current = null;
       setPhase('code');

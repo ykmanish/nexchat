@@ -18,7 +18,7 @@ export default function LoginPage() {
   /* Where to land afterwards — see the note in welcome/page.js for why this is
      read after mount. Relative only: an absolute URL here would be an open
      redirect for anyone who can hand out a login link. */
-  const [next, setNext] = useState('/chats');
+  const [next, setNext] = useState('/feed');
 
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get('next');

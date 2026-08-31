@@ -6,7 +6,7 @@ import { shortId } from '../utils/ids.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const uploadRoot = path.resolve(rootDir, env.upload.dir);
-for (const sub of ['media', 'avatars', 'stories', 'voice']) {
+for (const sub of ['media', 'avatars', 'stories', 'voice', 'posts']) {
   fs.mkdirSync(path.join(uploadRoot, sub), { recursive: true });
 }
 
@@ -37,6 +37,21 @@ export const uploadAvatar = multer({
     cb(null, true);
   },
 }).single('avatar');
+
+/* Feed media is stored in the clear, the same bargain avatars already make: a
+   post is a broadcast, so there is no recipient set to seal it to. The filter
+   is therefore real work rather than a formality — these bytes are served to
+   anyone with the link, so only pictures and video may become them. */
+export const uploadPost = multer({
+  storage,
+  limits: { fileSize: Math.min(env.upload.maxMb, 80) * 1024 * 1024, files: 10 },
+  fileFilter(_req, file, cb) {
+    if (!/^(image|video)\//.test(file.mimetype)) {
+      return cb(ApiError.badRequest('Posts take photos and video only', 'BAD_MIME'));
+    }
+    cb(null, true);
+  },
+}).array('files', 10);
 
 export const setBucket = (bucket) => (req, _res, next) => {
   req.uploadBucket = bucket;

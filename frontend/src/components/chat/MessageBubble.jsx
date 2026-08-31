@@ -19,6 +19,7 @@ import { ViewOnceBubble } from './ViewOnceBubble';
 import { CodeBlock } from './CodeBlock';
 import { PollBubble } from './PollBubble';
 import { LinkPreview } from './LinkPreview';
+import { isInternalLink } from '@/lib/linkpreview';
 import { parseMessageBody, splitInlineCode, firstUrl } from '@/lib/codeblocks';
 import { seedPreview } from '@/lib/linkpreview';
 import * as mentions from '@/lib/mentions';
@@ -330,7 +331,7 @@ export function MessageBubble({
                 bigEmoji ? 'text-[42px] leading-[1.2]' : 'text-[14.6px] leading-[1.35]'
               )}
             >
-              {linkUrl && !bigEmoji && (
+              {linkUrl && !bigEmoji && !isInternalLink(linkUrl) && (
                 <LinkPreview
                   url={linkUrl}
                   preview={plain?.linkPreview}

@@ -4,19 +4,62 @@
     {
       "name": "nexchat-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "frontend",
       "port": 3000,
       "autoPort": true,
-      "env": { "NEXT_DIST_DIR": ".next-preview" }
+      "env": {
+        "NEXT_DIST_DIR": ".next-preview"
+      }
     },
     {
       "name": "nexchat-api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:mem"],
+      "runtimeArgs": [
+        "run",
+        "dev:mem"
+      ],
       "cwd": "backend",
       "port": 5000,
-      "env": { "PORT": "5000" }
+      "env": {
+        "PORT": "5000"
+      }
+    },
+    {
+      "name": "nexchat-api-test",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:mem"
+      ],
+      "cwd": "backend",
+      "port": 5050,
+      "env": {
+        "PORT": "5050",
+        "USE_MEMORY_DB": "true",
+        "CLIENT_URL": "http://localhost:3000,http://localhost:3100",
+        "SMTP_HOST": "",
+        "SMTP_USER": "",
+        "SMTP_PASS": ""
+      }
+    },
+    {
+      "name": "nexchat-web-test",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "cwd": "frontend",
+      "port": 3100,
+      "env": {
+        "PORT": "3100",
+        "NEXT_PUBLIC_API_URL": "http://localhost:5050",
+        "NEXT_DIST_DIR": ".next-test"
+      }
     }
   ]
 }

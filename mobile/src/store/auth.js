@@ -259,9 +259,9 @@ export const useAuth = create((set, get) => ({
       type: asset.mimeType || 'image/jpeg',
     });
 
-    const { data } = await api.post('/users/me/avatar', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    // No Content-Type by hand — see the note in lib/upload.js: setting it
+    // drops the multipart boundary and the server sees no file.
+    const { data } = await api.post('/users/me/avatar', form);
     set({ user: data.user });
     return data.user;
   },

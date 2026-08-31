@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
+  Home,
+  Compass,
   MessageCircle,
   CircleDashed,
   Phone,
   Settings,
   Archive,
   Star,
+  Bookmark,
   Moon,
   Sun,
 } from 'lucide-react';
@@ -22,12 +25,15 @@ import { useAuth } from '@/store/auth';
 import { useChat } from '@/store/chat';
 
 const PRIMARY = [
+  { href: '/feed', icon: Home, label: 'Feed' },
+  { href: '/explore', icon: Compass, label: 'Explore' },
   { href: '/chats', icon: MessageCircle, label: 'Chats' },
   { href: '/status', icon: CircleDashed, label: 'Updates' },
   { href: '/calls', icon: Phone, label: 'Calls' },
 ];
 
 const SECONDARY = [
+  { href: '/feed/saved', icon: Bookmark, label: 'Saved' },
   { href: '/chats?archived=1', icon: Archive, label: 'Archived' },
   { href: '/settings/starred', icon: Star, label: 'Starred' },
 ];
@@ -53,7 +59,7 @@ export function DesktopRail() {
     <aside className="hidden w-[68px] shrink-0 flex-col items-center border-r border-line bg-app py-3 lg:flex">
       <button
         type="button"
-        onClick={() => router.push('/chats')}
+        onClick={() => router.push('/feed')}
         className="mb-5 transition-transform hover:scale-105 active:scale-95"
         aria-label="Chax"
       >
@@ -66,7 +72,11 @@ export function DesktopRail() {
             key={item.href}
             {...item}
             badge={item.href === '/chats' ? unread : 0}
-            active={pathname.startsWith(item.href) && !archivedOpen}
+            active={
+              item.href === '/feed'
+                ? pathname === '/feed' || /^\/feed\/[^/]+$/.test(pathname)
+                : pathname.startsWith(item.href) && !archivedOpen
+            }
             onClick={() => router.push(item.href)}
           />
         ))}
@@ -78,7 +88,11 @@ export function DesktopRail() {
             key={item.href}
             {...item}
             active={
-              item.label === 'Archived' ? archivedOpen : pathname.startsWith('/settings/starred')
+              item.label === 'Archived'
+                ? archivedOpen
+                : item.label === 'Saved'
+                  ? pathname === '/feed/saved'
+                  : pathname.startsWith('/settings/starred')
             }
             onClick={() => router.push(item.href)}
           />

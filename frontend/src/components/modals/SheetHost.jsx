@@ -6,6 +6,16 @@ import { ChatInfoSheet } from './ChatInfoSheet';
 import { ChatOptionsSheet, ChatListMenuSheet } from './ChatOptionsSheet';
 import { ForwardSheet } from './ForwardSheet';
 import { NewStorySheet, StoryViewerSheet } from './StorySheets';
+import { NewPostSheet } from './NewPostSheet';
+import { CommentsSheet } from './CommentsSheet';
+import {
+  SharePostSheet,
+  PostLikesSheet,
+  RepostSheet,
+  PostOptionsSheet,
+  EditPostSheet,
+  PostAudienceSheet,
+} from './PostSheets';
 import { EmojiPickerSheet, MessageInfoSheet, ReactionDetailsSheet } from './MiscSheets';
 import { NewPollSheet, PollVotersSheet } from './PollSheets';
 import { GroupMembersSheet } from './GroupMembersSheet';
@@ -45,6 +55,16 @@ export function SheetHost() {
 
       <NewStorySheet open={type === 'newStory'} onClose={close} />
       <StoryViewerSheet open={type === 'storyViewer'} onClose={close} {...props} />
+
+      {/* ── feed ── */}
+      <NewPostSheet open={type === 'newPost'} onClose={close} {...props} />
+      <CommentsSheet open={type === 'comments'} onClose={close} {...props} />
+      <SharePostSheet open={type === 'sharePost'} onClose={close} {...props} />
+      <PostLikesSheet open={type === 'postLikes'} onClose={close} {...props} />
+      <RepostSheet open={type === 'repost'} onClose={close} {...props} />
+      <PostOptionsSheet open={type === 'postOptions'} onClose={close} {...props} />
+      <EditPostSheet open={type === 'editPost'} onClose={close} {...props} />
+      <PostAudienceSheet open={type === 'postAudience'} onClose={close} {...props} />
 
       <EmojiPickerSheet open={type === 'emojiPicker'} onClose={close} {...props} />
       <MessageInfoSheet open={type === 'messageInfo'} onClose={close} {...props} />

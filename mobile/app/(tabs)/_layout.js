@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Platform, View, Text, StyleSheet } from 'react-native';
-import { MessageCircle, CircleDashed, Phone, Settings } from 'lucide-react-native';
+import { MessageCircle, CircleDashed, Phone, CircleUserRound } from 'lucide-react-native';
 import { useTheme } from '../../src/theme';
 import { useChat } from '../../src/store/chat';
 
@@ -44,7 +44,7 @@ export default function TabsLayout() {
         lazy: false,
         freezeOnBlur: true,
         animation: 'shift',
-        tabBarActiveTintColor: theme.accent,
+        tabBarActiveTintColor: theme.accentStrong,
         tabBarInactiveTintColor: theme.inkMuted,
         tabBarStyle: {
           backgroundColor: theme.surface,
@@ -89,9 +89,11 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          // "You", not "Settings" — the web names it after the person rather
+          // than the machinery, and it holds the profile as well as the toggles.
+          title: 'You',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon Icon={Settings} color={color} focused={focused} theme={theme} />
+            <TabIcon Icon={CircleUserRound} color={color} focused={focused} theme={theme} />
           ),
         }}
       />
@@ -114,7 +116,7 @@ function TabIcon({ Icon, color, focused, badge, theme }) {
 
       {badge > 0 && (
         <View style={[styles.badge, { backgroundColor: theme.accent }]}>
-          <Text style={styles.badgeText} numberOfLines={1}>
+          <Text style={[styles.badgeText, { color: theme.accentInk }]} numberOfLines={1}>
             {badge > 99 ? '99+' : badge}
           </Text>
         </View>

@@ -111,7 +111,7 @@ export default function LinkDevicePage() {
 
       feedback('linked');
       setStatus('done');
-      setTimeout(() => router.replace('/chats'), 900);
+      setTimeout(() => router.replace('/feed'), 900);
     } catch (err) {
       claimed.current = false;
       setError(err.message);

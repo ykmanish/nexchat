@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as C from './crypto';
 import { vault } from './vault';
 import { api, API_ORIGIN } from './api';
+import { report } from './report';
 
 /**
  * Session + envelope management — the native counterpart of the web client's
@@ -360,6 +361,12 @@ export async function decryptEnvelope(message) {
   const senderId = String(message.sender?._id || message.sender);
   const senderDeviceId = message.senderDeviceId;
 
+  /* Why a message failed to open is the single most useful thing to know here
+     and the hardest to guess at: "no slot addressed to us" and "the slot is
+     there but the key is wrong" look identical from outside, and both used to
+     surface as the same silent null. */
+  const reasons = [];
+
   // Fast path: a session slot addressed to this exact device.
   const deviceSlot = slots.find((k) => k.deviceId === state.deviceId);
   if (deviceSlot && senderDeviceId) {
@@ -369,29 +376,61 @@ export async function decryptEnvelope(message) {
       const { messageKey } = await C.messageKeyAt(chain0, deviceSlot.counter || 0);
       const cek = await C.aesDecrypt(messageKey, deviceSlot.ciphertext, deviceSlot.iv);
       return JSON.parse(await C.aesDecryptToString(cek, message.body.ciphertext, message.body.iv));
-    } catch {
+    } catch (err) {
+      reasons.push('device:' + (err?.message || 'failed'));
       /* fall through to the account slot */
     }
+  } else {
+    reasons.push(deviceSlot ? 'device:no-sender-id' : 'device:no-slot');
   }
 
-  // Durable path: sealed to the account identity, readable on any of our devices.
-  const accountSlot = slots.find((k) => k.deviceId === ACCOUNT_SLOT);
-  if (accountSlot) {
+  /**
+   * Durable path: sealed to the account identity, readable on any of our
+   * devices.
+   *
+   * A message carries one account slot **per recipient**, so picking the first
+   * one is picking somebody else's — sealed to their identity key, which fails
+   * as an AES-GCM tag mismatch rather than as anything that names the cause.
+   * The endpoints that serve a thread filter the slots down to yours, which is
+   * why this only ever bit the chat-list preview, where `lastMessage` arrives
+   * unfiltered. Selecting by user id is correct either way and does not depend
+   * on the server having done it for us.
+   */
+  const mine = String(state.userId);
+  const accountSlots = slots.filter((k) => k.deviceId === ACCOUNT_SLOT);
+  const ordered = [
+    ...accountSlots.filter((k) => String(k.user) === mine),
+    // Older messages predate the `user` field being carried on a slot, so the
+    // rest are still worth trying rather than refusing to open history.
+    ...accountSlots.filter((k) => String(k.user) !== mine),
+  ];
+
+  for (const slot of ordered) {
     try {
       const cek = await C.openSealed(
         state.identityPrivateKey,
         {
-          ciphertext: accountSlot.ciphertext,
-          iv: accountSlot.iv,
-          ephemeralPublicKey: accountSlot.ephemeralPublicKey,
+          ciphertext: slot.ciphertext,
+          iv: slot.iv,
+          ephemeralPublicKey: slot.ephemeralPublicKey,
         },
         state.identityPublicKey
       );
       return JSON.parse(await C.aesDecryptToString(cek, message.body.ciphertext, message.body.iv));
-    } catch {
-      /* fall through */
+    } catch (err) {
+      reasons.push('account:' + (err?.message || 'failed'));
     }
   }
+
+  if (!accountSlots.length) reasons.push('account:no-slot');
+
+  report('decryptEnvelope', new Error(reasons.join(' | ')), {
+    messageId: String(message._id || ''),
+    slots: slots.length,
+    slotIds: slots.map((k) => k.deviceId).slice(0, 6),
+    myDeviceId: state.deviceId,
+    senderDeviceId: senderDeviceId || null,
+  });
 
   return null;
 }

@@ -6,7 +6,7 @@ import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Phone, Video } from 'lucide-
 import { api } from '../../src/lib/api';
 import { useAuth } from '../../src/store/auth';
 import { Avatar } from '../../src/components/Avatar';
-import { useTheme } from '../../src/theme';
+import { useTheme, font } from '../../src/theme';
 import { shortTime } from '../../src/lib/utils';
 
 export default function CallsScreen() {
@@ -48,8 +48,8 @@ export default function CallsScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor={theme.accent}
-          colors={[theme.accent]}
+          tintColor={theme.accentStrong}
+          colors={[theme.accentStrong]}
           progressBackgroundColor={theme.surface3}
         />
       }
@@ -79,9 +79,9 @@ export default function CallsScreen() {
               </View>
             </View>
             {call.kind === 'video' ? (
-              <Video size={21} color={theme.accent} strokeWidth={2} />
+              <Video size={21} color={theme.accentStrong} strokeWidth={2} />
             ) : (
-              <Phone size={21} color={theme.accent} strokeWidth={2} />
+              <Phone size={21} color={theme.accentStrong} strokeWidth={2} />
             )}
           </Pressable>
         );
@@ -101,7 +101,7 @@ export default function CallsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screenTitle: { fontSize: 27, fontWeight: '800', letterSpacing: -0.6, paddingHorizontal: 20, paddingBottom: 12 },
+  screenTitle: { fontFamily: font.display, fontSize: 27, letterSpacing: -0.55, paddingHorizontal: 20, paddingBottom: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 10 },
   rowText: { flex: 1, gap: 3 },
   rowTitle: { fontSize: 16, fontWeight: '600' },

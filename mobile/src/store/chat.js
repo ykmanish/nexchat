@@ -6,6 +6,7 @@ import * as e2ee from '../lib/e2ee';
 import { uid, idOf } from '../lib/utils';
 import { feedback } from '../lib/feedback';
 import { toast } from './ui';
+import { report, trace } from '../lib/report';
 
 export { idOf };
 
@@ -31,6 +32,7 @@ export const useChat = create((set, get) => ({
   typing: {}, // conversationId -> { userId: name }
   presence: {}, // userId -> boolean
   stories: [],
+  replyTo: null,
   loaded: false,
   showArchived: false,
   search: '',
@@ -197,7 +199,9 @@ export const useChat = create((set, get) => ({
   closeConversation() {
     const id = get().activeId;
     if (id) emit('conversation:leave', id);
-    set({ activeId: null });
+    // The draft reply goes too, or it reappears attached to whichever chat is
+    // opened next.
+    set({ activeId: null, replyTo: null });
   },
 
   async createDirect(userId) {
@@ -437,6 +441,11 @@ export const useChat = create((set, get) => ({
         ...(mentionsEveryone ? { mentionsEveryone: true } : {}),
       };
 
+      trace('sendMessage:encrypted', {
+        slots: keys.length,
+        viaSocket: !!getSocket()?.connected,
+      });
+
       // Socket first (lower latency); REST is the fallback if it is down.
       let saved;
       if (getSocket()?.connected) {
@@ -473,6 +482,13 @@ export const useChat = create((set, get) => ({
 
       return saved;
     } catch (err) {
+      report('sendMessage', err, {
+        conversationId,
+        recipients: recipientsOf(conversation).length,
+        attachments: attachments.length,
+        viaSocket: !!getSocket()?.connected,
+      });
+
       set((s) => ({
         messages: {
           ...s.messages,
@@ -719,6 +735,12 @@ export const useChat = create((set, get) => ({
     set({ stories: data.rings });
     return data.rings;
   },
+
+  /* Reply state lives here rather than in the chat screen, because the sheet
+     that starts a reply and the composer that renders it sit on opposite sides
+     of the tree. */
+  setReplyTo: (replyTo) => set({ replyTo }),
+  clearReplyTo: () => set({ replyTo: null }),
 
   setSearch: (search) => set({ search }),
 

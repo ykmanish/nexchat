@@ -1,6 +1,5 @@
-// Must be first: everything below reaches for crypto.getRandomValues.
-import '../src/lib/polyfills';
-
+/* The crypto polyfill is installed by `index.js`, before this module or any
+   route is evaluated — see the comment there for why the ordering matters. */
 import { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Stack, router } from 'expo-router';
@@ -9,6 +8,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { enableFreeze } from 'react-native-screens';
+import { useFonts } from 'expo-font';
+import {
+  Outfit_500Medium,
+  Outfit_600SemiBold,
+  Outfit_700Bold,
+} from '@expo-google-fonts/outfit';
 
 import { useTheme } from '../src/theme';
 import { useAuth } from '../src/store/auth';
@@ -18,6 +23,10 @@ import { attachRealtime } from '../src/lib/realtime';
 import * as notifications from '../src/lib/notifications';
 import { toast } from '../src/store/ui';
 import { ToastStack } from '../src/components/Toast';
+import { SheetHost } from '../src/components/sheets/SheetHost';
+import { AppLockGate } from '../src/components/AppLockGate';
+import { MotionGestures } from '../src/components/MotionGestures';
+import { prepareAudio } from '../src/lib/feedback';
 
 /**
  * Freeze inactive screens.
@@ -39,10 +48,30 @@ export default function RootLayout() {
   const bootstrap = useAuth((s) => s.bootstrap);
   const user = useAuth((s) => s.user);
 
+  /* Satre carries the interface, Outfit the headings — the same split the web
+     client makes. Both are bundled, so there is no network fetch and no flash
+     of a fallback face. */
+  const [fontsReady] = useFonts({
+    Satre: require('../assets/fonts/satre.ttf'),
+    Outfit_500Medium,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+  });
+
   /* ─── restore the session once ─── */
   useEffect(() => {
-    bootstrap().finally(() => SplashScreen.hideAsync().catch(() => {}));
+    bootstrap();
+    // Audio players are built once; creating one per tap is what makes a
+    // sound arrive late and then all at once.
+    prepareAudio();
   }, [bootstrap]);
+
+  /* Hold the splash until both the session and the fonts are settled, so the
+     first painted frame is the real one rather than a system-font version of
+     it that reflows a moment later. */
+  useEffect(() => {
+    if (fontsReady && status !== 'loading') SplashScreen.hideAsync().catch(() => {});
+  }, [fontsReady, status]);
 
   /* The chat store needs to know who "me" is to tell my messages from others'. */
   useEffect(() => {
@@ -77,6 +106,9 @@ export default function RootLayout() {
     notifications.flushOutbox().catch(() => {});
     notifications.registerBackgroundHandler().catch(() => {});
     notifications.configureCategories().catch(() => {});
+    /* Re-post this device's FCM token. Tokens rotate silently, and a server
+       holding a stale one — or none — looks exactly like push being broken. */
+    notifications.reconcilePush().catch(() => {});
 
     return detach;
   }, [status]);
@@ -110,6 +142,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.app }}>
       <SafeAreaProvider>
+        <AppLockGate>
         <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
         <Stack
           screenOptions={{
@@ -126,7 +159,12 @@ export default function RootLayout() {
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="chat/[id]" />
         </Stack>
+        {/* Above the navigator, so a sheet floats over the tab bar the
+            way it does on the web. */}
+        <SheetHost />
+        {status === 'authed' && <MotionGestures />}
         <ToastStack />
+        </AppLockGate>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

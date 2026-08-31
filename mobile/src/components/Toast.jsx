@@ -19,7 +19,7 @@ export function ToastStack() {
     <View style={[styles.stack, { bottom: insets.bottom + 78 }]} pointerEvents="box-none">
       {toasts.map((t) => {
         const Icon = ICONS[t.kind] || Info;
-        const tint = t.kind === 'error' ? theme.danger : t.kind === 'success' ? theme.accent : theme.inkMuted;
+        const tint = t.kind === 'error' ? theme.danger : t.kind === 'success' ? theme.accentStrong : theme.inkMuted;
 
         return (
           <Animated.View

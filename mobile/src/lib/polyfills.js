@@ -1,34 +1,66 @@
 import { getRandomValues } from 'expo-crypto';
 
 /**
- * The few browser globals the ported code assumes.
+ * Browser globals the ported code assumes.
  *
- * Imported for its side effects at the very top of the root layout, before
- * anything that touches crypto. React Native's JS engine has no
- * `crypto.getRandomValues`, and @noble reaches for it when minting private
- * keys — without this, key generation throws at the first sign-up.
+ * Imported by `index.js` before anything else, because @noble reads
+ * `globalThis.crypto` **once, at module load**, and keeps whatever it found:
+ *
+ *     exports.crypto = 'crypto' in globalThis ? globalThis.crypto : undefined;
+ *
+ * So this has to win the race, and it has to leave a real object in place —
+ * replacing `globalThis.crypto` later would not reach a reference @noble has
+ * already captured.
  */
-if (typeof globalThis.crypto === 'undefined') {
-  globalThis.crypto = {};
+
+/* Hermes has no `crypto` at all, so the property is created rather than
+   patched. `defineProperty` because a bare assignment throws on some engines
+   where the global object is sealed. */
+function ensureCryptoObject() {
+  if (typeof globalThis.crypto === 'object' && globalThis.crypto !== null) return globalThis.crypto;
+
+  const host = {};
+  try {
+    globalThis.crypto = host;
+  } catch {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: host,
+      configurable: true,
+      writable: true,
+      enumerable: false,
+    });
+  }
+  return globalThis.crypto;
 }
 
-if (typeof globalThis.crypto.getRandomValues !== 'function') {
-  // expo-crypto is backed by Android's SecureRandom. Assigning through
-  // defineProperty because the host object is sometimes a frozen accessor.
+const cryptoObject = ensureCryptoObject();
+
+if (typeof cryptoObject.getRandomValues !== 'function') {
+  // expo-crypto is backed by Android's SecureRandom.
   try {
-    globalThis.crypto.getRandomValues = getRandomValues;
+    cryptoObject.getRandomValues = getRandomValues;
   } catch {
-    Object.defineProperty(globalThis.crypto, 'getRandomValues', {
+    Object.defineProperty(cryptoObject, 'getRandomValues', {
       value: getRandomValues,
       configurable: true,
+      writable: true,
     });
   }
 }
 
+/* Fail loudly here rather than four screens later. If this throws, the app is
+   unusable anyway — every account starts with a generated key — and a crash at
+   launch is far easier to diagnose than "sign-up does not work". */
+if (typeof globalThis.crypto?.getRandomValues !== 'function') {
+  throw new Error(
+    'Chax could not install a secure random source. expo-crypto is missing or failed to link.'
+  );
+}
+
 /**
- * Hermes ships Intl but not always a `TextEncoder`/`TextDecoder` pair. Both are
- * used for every message body, so a tiny UTF-8 implementation stands in rather
- * than pulling a polyfill package for two functions.
+ * Hermes ships Intl but not always TextEncoder/TextDecoder, and both are used
+ * for every message body — so a small UTF-8 pair stands in rather than pulling
+ * a package for two functions.
  */
 if (typeof globalThis.TextEncoder === 'undefined') {
   globalThis.TextEncoder = class TextEncoder {

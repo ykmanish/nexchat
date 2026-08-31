@@ -6,6 +6,7 @@ import { vault } from './vault';
 import * as e2ee from './e2ee';
 import { uid } from './utils';
 import { HAS_FCM } from './config';
+import { report, trace } from './report';
 
 /**
  * Notifications, and replying from inside one.
@@ -88,16 +89,17 @@ export async function configureCategories() {
  * uses, tagged so the server knows to route it through FCM rather than treating
  * it as a Web Push subscription.
  */
-export async function registerForPush() {
+export async function registerForPush({ prompt = true } = {}) {
   const existing = await Notifications.getPermissionsAsync();
   let status = existing.status;
 
-  if (status !== 'granted') {
+  if (status !== 'granted' && prompt) {
     const asked = await Notifications.requestPermissionsAsync();
     status = asked.status;
   }
 
   if (status !== 'granted') {
+    if (!prompt) return { transport: null, reason: 'not-granted' };
     throw new Error(
       'Notifications are turned off for Chax. Enable them in Android settings to be told about new messages.'
     );
@@ -113,12 +115,64 @@ export async function registerForPush() {
   }
 
   const token = await Notifications.getDevicePushTokenAsync();
+  trace('push:token', {
+    type: token.type,
+    // Never the whole token: it is a credential for reaching this device.
+    tail: String(token.data || '').slice(-10),
+    length: String(token.data || '').length,
+  });
 
   await api.post('/devices/push-subscription', {
     subscription: { type: 'fcm', token: token.data, platform: 'android' },
   });
+  trace('push:registered', { transport: 'fcm' });
 
   return { transport: 'fcm', token: token.data };
+}
+
+/**
+ * Re-registers this device's token at launch, without prompting.
+ *
+ * FCM rotates tokens on its own schedule — a restore to a new phone, a long
+ * gap between launches, an app data clear — and the old one then stops
+ * delivering with no error on either side. The symptom is "notifications worked
+ * for a week and then stopped", which is indistinguishable from the feature
+ * being broken.
+ *
+ * It also covers the case that made the test button fail: permission granted
+ * on a previous run, but the server holding no subscription for this device,
+ * so there was nothing for it to send to. Posting the token is idempotent, so
+ * doing it on every launch costs one request and removes a whole class of
+ * silent failure.
+ */
+export async function reconcilePush() {
+  try {
+    return await registerForPush({ prompt: false });
+  } catch (err) {
+    /* This ran silently on every launch and swallowed whatever went wrong, so
+       a device that never registered looked identical to one that had. */
+    report('push:reconcile', err);
+    return { transport: null, reason: 'failed' };
+  }
+}
+
+/** What this device's notification setup actually looks like, for the UI. */
+export async function pushStatus() {
+  const [{ status }, config] = await Promise.all([
+    Notifications.getPermissionsAsync(),
+    pushConfig(),
+  ]);
+
+  return {
+    permission: status,
+    granted: status === 'granted',
+    serverEnabled: config.enabled,
+    serverFcm: config.fcm,
+    ephemeral: config.ephemeral,
+    unreachable: !!config.unreachable,
+    // FCM only counts as usable when both ends have it.
+    transport: status === 'granted' && HAS_FCM && config.fcm ? 'fcm' : status === 'granted' ? 'socket' : null,
+  };
 }
 
 export async function unregisterPush() {
@@ -142,6 +196,7 @@ export async function pushConfig() {
 /** Round-trips through the server, so it tests the delivery path end to end. */
 export async function sendTestNotification() {
   const { data } = await api.post('/devices/push-test');
+  trace('push:test', { success: !!data.success, reason: data.reason || null, sent: data.sent });
   if (!data.success) throw new Error(data.reason || 'The server could not send it');
   return data;
 }

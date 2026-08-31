@@ -49,7 +49,7 @@ export function Avatar({ uri, name, id, size = 48, group = false, online = false
           style={[
             styles.dot,
             {
-              backgroundColor: theme.accent,
+              backgroundColor: theme.accentStrong,
               borderColor: theme.surface,
               width: size * 0.28,
               height: size * 0.28,

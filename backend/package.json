@@ -15,8 +15,9 @@
     "verify-export": "node scripts/verify-export.mjs",
     "reconcile": "node scripts/reconcile-exports.mjs",
     "test:contacts": "node scripts/contacts.test.mjs",
+    "test:feed": "node scripts/feed.test.mjs",
     "test:push": "node scripts/pushdelivery.test.mjs",
-    "test": "npm run test:forensics && npm run test:contacts && npm run test:push"
+    "test": "npm run test:forensics && npm run test:contacts && npm run test:feed && npm run test:push"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

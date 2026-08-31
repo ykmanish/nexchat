@@ -27,7 +27,12 @@ import { firstUrl } from '@/lib/codeblocks';
 import * as mentions from '@/lib/mentions';
 import * as media from '@/lib/media';
 import { send as sendUpload } from '@/lib/upload';
-import { cachedPreview, hostOf, resolvePreview as resolveShared } from '@/lib/linkpreview';
+import {
+  cachedPreview,
+  hostOf,
+  isInternalLink,
+  resolvePreview as resolveShared,
+} from '@/lib/linkpreview';
 import { feedback, sounds } from '@/lib/sound';
 import { emit } from '@/lib/socket';
 import { api } from '@/lib/api';
@@ -133,7 +138,10 @@ export function Composer({ conversation, onSent, threadRoot = null, placeholder 
 
   useEffect(() => {
     const url = firstUrl(text);
-    if (!url) {
+    /* A link back into Chax gets no card, so there is nothing to resolve — and
+       resolving it would ask the server about a client-side route it cannot
+       see anyway. Matches what the bubble renders. */
+    if (!url || isInternalLink(url)) {
       previewFor.current = null;
       setPreview(null);
       return;

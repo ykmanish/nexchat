@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { ThemeProvider, useTheme } from 'next-themes';
 import { useAuth } from '@/store/auth';
 import { useChat, setMe } from '@/store/chat';
+import { useFeed } from '@/store/feed';
 import { useUI } from '@/store/ui';
 import { onUnauthorized } from '@/lib/api';
 import { getSocket, connectSocket } from '@/lib/socket';
@@ -92,6 +93,7 @@ function SessionBridge() {
       onUnauthorized((code) => {
         useAuth.setState({ status: 'guest', user: null });
         useChat.getState().reset();
+        useFeed.getState().reset();
         useUI.getState().toast(
           code === 'DEVICE_REVOKED'
             ? 'This device was signed out from another device.'
@@ -353,6 +355,68 @@ function SocketBridge() {
       },
 
       'story:new': () => chat().loadStories().catch(() => {}),
+
+      /* ── feed ──
+         A post from somebody you follow slots straight into the timeline. The
+         rest are notifications about your own posts: they carry only an id, so
+         the counter is refreshed from the post itself rather than trusted from
+         the wire — two people liking at once would otherwise each report a
+         count of one. */
+      'post:new': ({ post }) => useFeed.getState().receivePost(post),
+      'post:deleted': ({ postId }) => useFeed.getState().removePost(postId),
+
+      'post:liked': ({ postId, by }) => {
+        const feed = useFeed.getState();
+        if (!feed.posts[postId]) return;
+        feed.loadPost(postId).catch(() => {});
+        if (String(by?._id) !== String(me()._id)) feedback('react');
+      },
+
+      'post:commented': ({ postId }) => {
+        const feed = useFeed.getState();
+        if (!feed.posts[postId]) return;
+        feed.loadPost(postId).catch(() => {});
+        /* Only reload the thread if it is actually open — refetching comments
+           for a post nobody is looking at is a request for nothing. */
+        if (feed.comments[postId]) feed.loadComments(postId, { refresh: true });
+      },
+
+      'post:replied': ({ postId }) => {
+        const feed = useFeed.getState();
+        if (feed.comments[postId]) feed.loadComments(postId, { refresh: true });
+      },
+
+      'post:reposted': ({ postId }) => {
+        if (useFeed.getState().posts[postId]) {
+          useFeed.getState().loadPost(postId).catch(() => {});
+        }
+      },
+
+      'comment:liked': ({ postId }) => {
+        const feed = useFeed.getState();
+        if (feed.comments[postId]) feed.loadComments(postId, { refresh: true });
+      },
+
+      'post:mentioned': ({ postId }) => {
+        useUI.getState().toast('You were mentioned in a post', {
+          type: 'info',
+          action: { label: 'View', onClick: () => window.location.assign('/feed/' + postId) },
+        });
+      },
+
+      'comment:mentioned': ({ postId }) => {
+        useUI.getState().toast('You were mentioned in a comment', {
+          type: 'info',
+          action: { label: 'View', onClick: () => window.location.assign('/feed/' + postId) },
+        });
+      },
+
+      /* Somebody followed you — your own follower count moved, and so did the
+         feed they can now see. Only the suggestion list needs a nudge here. */
+      'follow:new': ({ by }) => {
+        useFeed.getState().loadSuggestions();
+        useUI.getState().toast((by?.name || 'Someone') + ' followed you', { type: 'info' });
+      },
 
       'call:incoming': (payload) => {
         useUI.getState().setCall({ ...payload, direction: 'incoming', status: 'ringing' });

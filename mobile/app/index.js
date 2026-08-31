@@ -17,7 +17,7 @@ export default function Index() {
   if (status === 'loading') {
     return (
       <View style={[styles.centre, { backgroundColor: theme.app }]}>
-        <ActivityIndicator size="large" color={theme.accent} />
+        <ActivityIndicator size="large" color={theme.accentStrong} />
       </View>
     );
   }

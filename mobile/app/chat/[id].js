@@ -1,35 +1,29 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  TextInput,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, StyleSheet, Pressable, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { ArrowLeft, Send, Paperclip, Camera, Lock } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { ArrowLeft, Lock, X, Reply, Phone, Video, EllipsisVertical } from 'lucide-react-native';
 
 import { useChat } from '../../src/store/chat';
 import { useAuth } from '../../src/store/auth';
+import { useUI } from '../../src/store/ui';
 import { Avatar } from '../../src/components/Avatar';
 import { MessageBubble } from '../../src/components/MessageBubble';
-import { useTheme } from '../../src/theme';
-import { emit } from '../../src/lib/socket';
+import { Composer } from '../../src/components/Composer';
+import { useTheme, font } from '../../src/theme';
 import { dayLabel } from '../../src/lib/utils';
 import { toast } from '../../src/store/ui';
+import { feedback } from '../../src/lib/feedback';
 import * as notifications from '../../src/lib/notifications';
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const listRef = useRef(null);
 
   const conversation = useChat((s) => s.conversations.find((c) => c._id === id));
   const messages = useChat((s) => s.messages[id]);
@@ -38,118 +32,91 @@ export default function ChatScreen() {
   const presence = useChat((s) => s.presence);
   const hasMore = useChat((s) => s.hasMore[id]);
   const loading = useChat((s) => s.loadingMessages[id]);
+  const replyTo = useChat((s) => s.replyTo);
   const me = useAuth((s) => s.user);
+  const openSheet = useUI((s) => s.openSheet);
 
   const openConversation = useChat((s) => s.openConversation);
   const closeConversation = useChat((s) => s.closeConversation);
   const loadOlder = useChat((s) => s.loadOlder);
   const sendMessage = useChat((s) => s.sendMessage);
   const retryMessage = useChat((s) => s.retryMessage);
+  const clearReplyTo = useChat((s) => s.clearReplyTo);
 
-  const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
-
-  /* ─── open / close ─── */
   useEffect(() => {
     if (!id) return undefined;
     openConversation(id);
     // Any notification for this chat is stale the moment it is on screen.
     notifications.dismissFor(id).catch(() => {});
-
     return () => closeConversation();
   }, [id, openConversation, closeConversation]);
 
-  /* ─── typing indicator, throttled ─── */
-  const typingSentAt = useRef(0);
-  const typingTimer = useRef(null);
-
-  const onChangeText = useCallback(
-    (value) => {
-      setDraft(value);
-      if (!id) return;
-
-      const now = Date.now();
-      // One start per three seconds, rather than one per keystroke.
-      if (now - typingSentAt.current > 3000) {
-        typingSentAt.current = now;
-        emit('typing:start', { conversationId: id });
-      }
-
-      clearTimeout(typingTimer.current);
-      typingTimer.current = setTimeout(() => {
-        typingSentAt.current = 0;
-        emit('typing:stop', { conversationId: id });
-      }, 2200);
-    },
-    [id]
-  );
-
-  useEffect(() => () => clearTimeout(typingTimer.current), []);
-
-  /* ─── the list, newest first because it is inverted ─── */
+  /**
+   * The list, oldest first.
+   *
+   * FlashList v2 dropped the `inverted` prop that v1 had, and passing it is
+   * silently ignored rather than an error — which is exactly how this ended up
+   * rendering newest-at-top with the day separators upside down. The v2 way to
+   * build a chat is natural order plus `startRenderingFromBottom`, so the
+   * newest message is genuinely the last row and sits at the bottom.
+   */
   const rows = useMemo(() => {
     const list = messages || [];
     const out = [];
+    const dayOf = (m) => (m ? new Date(m.createdAt).toDateString() : null);
 
-    for (let i = list.length - 1; i >= 0; i -= 1) {
+    for (let i = 0; i < list.length; i += 1) {
       const message = list[i];
-      const older = list[i - 1];
-      const newer = list[i + 1];
+      const previous = list[i - 1];
+      const next = list[i + 1];
+
+      // A separator opens each day, so it is pushed before the first message
+      // of that day rather than after it.
+      if (!previous || dayOf(previous) !== dayOf(message)) {
+        out.push({ kind: 'day', key: 'day-' + message._id, at: message.createdAt });
+      }
 
       const mine = String(message.sender?._id || message.sender) === String(me?._id);
-      const nextMine = newer && String(newer.sender?._id || newer.sender) === String(me?._id);
-      const prevSender = older && String(older.sender?._id || older.sender);
+      const nextMine = next && String(next.sender?._id || next.sender) === String(me?._id);
+      const previousSender = previous && String(previous.sender?._id || previous.sender);
 
       out.push({
         kind: 'message',
         key: message._id,
         message,
         mine,
-        // Tail on the last bubble of a run, which is what gives the grouped
-        // look — a run of five messages has one tail, not five.
-        showTail: !newer || nextMine !== mine,
+        // Tail on the last bubble of a run — five messages get one tail, not five.
+        showTail: !next || nextMine !== mine || dayOf(next) !== dayOf(message),
         showSender:
           conversation?.type !== 'direct' &&
           !mine &&
-          prevSender !== String(message.sender?._id || message.sender),
+          previousSender !== String(message.sender?._id || message.sender),
       });
-
-      const dayOf = (m) => (m ? new Date(m.createdAt).toDateString() : null);
-      if (!older || dayOf(older) !== dayOf(message)) {
-        out.push({ kind: 'day', key: 'day-' + message._id, at: message.createdAt });
-      }
     }
     return out;
   }, [messages, me?._id, conversation?.type]);
 
   const typingNames = Object.values(typing || {});
 
-  const onSend = useCallback(async () => {
-    const text = draft.trim();
-    if (!text || sending) return;
+  const onSend = useCallback(
+    async ({ text, attachments }) => {
+      const reply = replyTo;
+      clearReplyTo();
 
-    setDraft('');
-    setSending(true);
-    emit('typing:stop', { conversationId: id });
-    typingSentAt.current = 0;
-
-    try {
-      await sendMessage({ conversationId: id, text });
-    } catch (err) {
-      toast.error(err.message || 'Could not send that message');
-    } finally {
-      setSending(false);
-    }
-  }, [draft, sending, id, sendMessage]);
-
-  const onAttach = useCallback(async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.85,
-    });
-    if (result.canceled) return;
-    toast.info('Attachment upload is not wired up in this build yet.');
-  }, []);
+      try {
+        await sendMessage({
+          conversationId: id,
+          text,
+          attachments,
+          replyTo: reply,
+          type: attachments?.length ? attachments[0].kind : 'text',
+        });
+      } catch (err) {
+        toast.error(err.message || 'Could not send that message');
+      }
+    },
+    [id, sendMessage, replyTo, clearReplyTo]
+  );
 
   const renderItem = useCallback(
     ({ item }) => {
@@ -171,15 +138,22 @@ export default function ChatScreen() {
           showTail={item.showTail}
           showSender={item.showSender}
           onRetry={() => retryMessage(id, item.message.clientId)}
+          onLongPress={() => {
+            feedback('select');
+            openSheet('messageActions', {
+              message: item.message,
+              payload: plain[item.message._id],
+            });
+          }}
         />
       );
     },
-    [plain, theme, id, retryMessage]
+    [plain, theme, id, retryMessage, openSheet]
   );
 
   const peerOnline = conversation?.type === 'direct' && presence[conversation?.peer?._id];
-  const title =
-    conversation?.type === 'direct' ? conversation?.peer?.name : conversation?.name;
+  const title = conversation?.type === 'direct' ? conversation?.peer?.name : conversation?.name;
+  const replyPayload = replyTo ? plain[replyTo._id] : null;
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.wallpaper }]}>
@@ -194,54 +168,90 @@ export default function ChatScreen() {
           <ArrowLeft size={24} color={theme.ink} strokeWidth={2.1} />
         </Pressable>
 
-        <Avatar
-          uri={conversation?.type === 'direct' ? conversation?.peer?.avatar : conversation?.avatar}
-          name={title}
-          id={conversation?.peer?._id || conversation?._id}
-          group={conversation?.type !== 'direct'}
-          size={38}
-        />
+        <Pressable
+          style={styles.headerMain}
+          onPress={() => openSheet('chatInfo', { conversation })}
+        >
+          <Avatar
+            uri={conversation?.type === 'direct' ? conversation?.peer?.avatar : conversation?.avatar}
+            name={title}
+            id={conversation?.peer?._id || conversation?._id}
+            group={conversation?.type !== 'direct'}
+            size={38}
+          />
 
-        <View style={styles.headerText}>
-          <Text style={[styles.headerTitle, { color: theme.ink }]} numberOfLines={1}>
-            {title || 'Chat'}
-          </Text>
-          <Text style={[styles.headerSub, { color: theme.inkMuted }]} numberOfLines={1}>
-            {typingNames.length
-              ? typingNames.length === 1
-                ? `${typingNames[0]} is typing…`
-                : 'several people are typing…'
-              : peerOnline
-                ? 'online'
-                : conversation?.type !== 'direct'
-                  ? `${conversation?.memberCount || 0} members`
-                  : 'end-to-end encrypted'}
-          </Text>
-        </View>
+          <View style={styles.headerText}>
+            <Text style={[styles.headerTitle, { color: theme.ink }]} numberOfLines={1}>
+              {title || 'Chat'}
+            </Text>
+            <Text style={[styles.headerSub, { color: theme.inkMuted }]} numberOfLines={1}>
+              {typingNames.length
+                ? typingNames.length === 1
+                  ? `${typingNames[0]} is typing…`
+                  : 'several people are typing…'
+                : peerOnline
+                  ? 'online'
+                  : conversation?.type !== 'direct'
+                    ? `${conversation?.memberCount || 0} members`
+                    : 'end-to-end encrypted'}
+            </Text>
+          </View>
+        </Pressable>
+
+        {/* Calls are signalled peer-to-peer over WebRTC on the web; the native
+            side has the history screen but not the call itself yet, so these
+            say so rather than doing nothing. */}
+        <Pressable
+          hitSlop={8}
+          onPress={() => toast.info('Voice calls are not built in the app yet.')}
+          style={styles.headerAction}
+        >
+          <Phone size={21} color={theme.inkSoft} strokeWidth={2.1} />
+        </Pressable>
+        <Pressable
+          hitSlop={8}
+          onPress={() => toast.info('Video calls are not built in the app yet.')}
+          style={styles.headerAction}
+        >
+          <Video size={22} color={theme.inkSoft} strokeWidth={2.1} />
+        </Pressable>
+        <Pressable
+          hitSlop={8}
+          onPress={() => openSheet('chatOptions', { conversation })}
+          style={styles.headerAction}
+        >
+          <EllipsisVertical size={21} color={theme.inkSoft} strokeWidth={2.1} />
+        </Pressable>
       </View>
 
       {/* ── messages ── */}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
       >
         {!messages && loading ? (
           <View style={styles.centre}>
-            <ActivityIndicator color={theme.accent} />
+            <ActivityIndicator color={theme.accentStrong} />
           </View>
         ) : (
           <FlashList
-            ref={listRef}
-            inverted
             data={rows}
             renderItem={renderItem}
             keyExtractor={(item) => item.key}
             contentContainerStyle={{ paddingVertical: 10 }}
             keyboardDismissMode="interactive"
-            onEndReached={() => hasMore && loadOlder(id)}
-            onEndReachedThreshold={0.4}
-            ListFooterComponent={
+            /* Open at the newest message, and stay pinned there when one
+               arrives while you are already at the bottom — but do not yank the
+               view if you have scrolled up to read something. */
+            maintainVisibleContentPosition={{
+              startRenderingFromBottom: true,
+              autoscrollToBottomThreshold: 0.2,
+              animateAutoScrollToBottom: true,
+            }}
+            /* Older history is at the top now, so it pages from the start. */
+            onStartReached={() => hasMore && loadOlder(id)}
+            onStartReachedThreshold={0.4}
+            ListHeaderComponent={
               loading && messages?.length ? (
                 <View style={styles.more}>
                   <ActivityIndicator size="small" color={theme.inkMuted} />
@@ -261,42 +271,33 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* ── composer ── */}
-        <View
-          style={[
-            styles.composerWrap,
-            { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: theme.wallpaper },
-          ]}
-        >
-          <View style={[styles.composer, { backgroundColor: theme.surface }]}>
-            <TextInput
-              value={draft}
-              onChangeText={onChangeText}
-              placeholder="Message"
-              placeholderTextColor={theme.inkFaint}
-              style={[styles.input, { color: theme.ink }]}
-              multiline
-              maxLength={4096}
-            />
-
-            <Pressable hitSlop={8} onPress={onAttach} style={styles.composerIcon}>
-              <Paperclip size={21} color={theme.inkMuted} strokeWidth={2} />
-            </Pressable>
-            <Pressable hitSlop={8} onPress={onAttach} style={styles.composerIcon}>
-              <Camera size={21} color={theme.inkMuted} strokeWidth={2} />
-            </Pressable>
-          </View>
-
-          <Pressable
-            onPress={onSend}
-            disabled={!draft.trim() || sending}
+        {/* ── replying to ── */}
+        {!!replyTo && (
+          <View
             style={[
-              styles.send,
-              { backgroundColor: draft.trim() ? theme.accent : theme.surface3 },
+              styles.replyBar,
+              { backgroundColor: theme.surface2, borderLeftColor: theme.accentStrong },
             ]}
           >
-            <Send size={20} color={draft.trim() ? '#fff' : theme.inkFaint} strokeWidth={2.2} />
-          </Pressable>
+            <Reply size={15} color={theme.accentStrong} strokeWidth={2.2} />
+            <View style={styles.replyText}>
+              <Text style={[styles.replyName, { color: theme.accentStrong }]} numberOfLines={1}>
+                {String(replyTo.sender?._id || replyTo.sender) === String(me?._id)
+                  ? 'You'
+                  : replyTo.sender?.name || 'Message'}
+              </Text>
+              <Text style={[styles.replyBody, { color: theme.inkMuted }]} numberOfLines={1}>
+                {replyPayload?.text || 'Attachment'}
+              </Text>
+            </View>
+            <Pressable hitSlop={10} onPress={clearReplyTo}>
+              <X size={18} color={theme.inkMuted} strokeWidth={2.2} />
+            </Pressable>
+          </View>
+        )}
+
+        <View style={{ paddingBottom: Math.max(insets.bottom, 8) }}>
+          <Composer conversationId={id} onSend={onSend} />
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -309,16 +310,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
-    paddingHorizontal: 12,
+    gap: 8,
+    paddingHorizontal: 10,
     paddingBottom: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
     elevation: 2,
   },
   back: { paddingRight: 2 },
+  headerMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  headerAction: { paddingHorizontal: 5 },
   headerText: { flex: 1, gap: 1 },
-  headerTitle: { fontSize: 16.5, fontWeight: '700', letterSpacing: -0.2 },
-  headerSub: { fontSize: 12.5 },
+  headerTitle: { fontFamily: font.display, fontSize: 16.5, letterSpacing: -0.3 },
+  headerSub: { fontSize: 12.5, fontFamily: font.body },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   more: { paddingVertical: 14, alignItems: 'center' },
   dayWrap: { alignItems: 'center', marginVertical: 9 },
@@ -329,42 +332,23 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 7,
     overflow: 'hidden',
+    fontFamily: font.body,
   },
-  emptyWrap: { paddingTop: 40, paddingHorizontal: 30, transform: [{ scaleY: -1 }] },
-  notice: {
+  emptyWrap: { paddingTop: 40, paddingHorizontal: 30 },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 7, padding: 11, borderRadius: 8 },
+  noticeText: { flex: 1, fontSize: 12.5, lineHeight: 18, textAlign: 'center', fontFamily: font.body },
+  replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    padding: 11,
+    gap: 10,
+    marginHorizontal: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
+    borderLeftWidth: 3,
   },
-  noticeText: { flex: 1, fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
-  composerWrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 7,
-    paddingHorizontal: 8,
-    paddingTop: 6,
-  },
-  composer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    borderRadius: 24,
-    paddingLeft: 16,
-    paddingRight: 8,
-    paddingVertical: 6,
-    minHeight: 46,
-    elevation: 1,
-  },
-  input: { flex: 1, fontSize: 15.5, maxHeight: 120, paddingTop: 6, paddingBottom: 6 },
-  composerIcon: { padding: 7 },
-  send: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
-  },
+  replyText: { flex: 1, gap: 1 },
+  replyName: { fontSize: 12.5, fontWeight: '700', fontFamily: font.body },
+  replyBody: { fontSize: 13, fontFamily: font.body },
 });

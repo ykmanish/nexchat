@@ -320,6 +320,44 @@ export const storySchema = z.object({
   audienceList: z.array(objectId).max(1024).optional(),
 });
 
+/* ────────────────────────────── feed ────────────────────────────── */
+
+const postMedia = z.object({
+  kind: z.enum(['image', 'video']).optional(),
+  url: z.string().min(1),
+  thumbnail: z.string().nullable().optional(),
+  placeholder: z.string().nullable().optional(),
+  width: z.number().nullable().optional(),
+  height: z.number().nullable().optional(),
+  duration: z.number().nullable().optional(),
+  size: z.number().optional(),
+  alt: z.string().max(420).optional(),
+});
+
+export const postSchema = z.object({
+  text: z.string().max(2200, 'That is longer than a post can be').optional(),
+  media: z.array(postMedia).max(10, 'Ten photos to a post').optional(),
+  audience: z.enum(['public', 'followers', 'contacts']).optional(),
+  location: z.string().trim().max(120).nullable().optional(),
+  commentsDisabled: z.boolean().optional(),
+  hideCounts: z.boolean().optional(),
+  repostOf: objectId.nullable().optional(),
+});
+
+export const postUpdateSchema = z.object({
+  text: z.string().max(2200).optional(),
+  audience: z.enum(['public', 'followers', 'contacts']).optional(),
+  location: z.string().trim().max(120).nullable().optional(),
+  commentsDisabled: z.boolean().optional(),
+  hideCounts: z.boolean().optional(),
+  pinned: z.boolean().optional(),
+});
+
+export const commentSchema = z.object({
+  text: z.string().trim().min(1, 'Say something first').max(1000, 'That comment is too long'),
+  parent: objectId.nullable().optional(),
+});
+
 export { objectId };
 
 /* ──────────────────────────── call links ──────────────────────────── */

@@ -73,6 +73,28 @@ module.exports = {
             // so "the APK" is a single file you can sideload anywhere.
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
+            /**
+             * R8 keep rules. They live here rather than in
+             * android/app/proguard-rules.pro because prebuild regenerates that
+             * file, so a hand-edit there vanishes on the next run.
+             *
+             * WebRTC's JNI layer is reached from native code R8 cannot see, so
+             * it has to be kept explicitly.
+             *
+             * Note what is deliberately *absent*: a blanket
+             * `-dontwarn expo.modules.**`. R8 reported missing
+             * `expo.modules.kotlin.*` classes, and silencing that turned a
+             * build failure into a ClassNotFoundException at launch — strictly
+             * worse, because the class really was not there. The cause was a
+             * `expo-audio` depending on `expo-asset@57` — two SDKs ahead of
+             * the core this SDK bundles. Using `expo-av` instead removes the
+             * skew at its source.
+             */
+            extraProguardRules: [
+              '-keep class org.webrtc.** { *; }',
+              '-dontwarn org.webrtc.**',
+              '-keep class com.oney.WebRTCModule.** { *; }',
+            ].join('\n'),
           },
         },
       ],
@@ -92,6 +114,14 @@ module.exports = {
         'expo-av',
         { microphonePermission: 'Chax needs the microphone to record voice notes.' },
       ],
+      [
+        'expo-local-authentication',
+        { faceIDPermission: 'Chax uses biometrics to unlock the app.' },
+      ],
+      /* WebRTC adds the camera/microphone plumbing and the JNI libraries the
+         calling stack needs. Pinned to the plugin release that targets this
+         SDK — the newer ones require Expo 56. */
+      '@config-plugins/react-native-webrtc',
       './plugins/withReleaseSigning',
     ],
 

@@ -52,8 +52,8 @@ function MessageBubbleInner({ message, payload, mine, showTail, showSender, onLo
         )}
 
         {message.replyTo && (
-          <View style={[styles.quote, { borderLeftColor: theme.accent, backgroundColor: theme.overlay }]}>
-            <Text style={[styles.quoteName, { color: theme.accent }]} numberOfLines={1}>
+          <View style={[styles.quote, { borderLeftColor: theme.accentStrong, backgroundColor: theme.overlay }]}>
+            <Text style={[styles.quoteName, { color: theme.accentStrong }]} numberOfLines={1}>
               {message.replyTo.sender?.name || 'Message'}
             </Text>
             <Text style={[styles.quoteText, { color: ink }]} numberOfLines={2}>

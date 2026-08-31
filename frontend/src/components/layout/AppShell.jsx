@@ -70,7 +70,7 @@ export function AppShell({ children }) {
     /* A shared link — a call code especially — is usually opened by someone who
        is not signed in yet. Dropping them on /welcome and forgetting where they
        were headed makes the link look broken, so it travels with them. */
-    const isDefault = pathname === '/' || pathname === '/chats';
+    const isDefault = pathname === '/' || pathname === '/chats' || pathname === '/feed';
     router.replace(isDefault ? '/welcome' : '/welcome?next=' + encodeURIComponent(pathname));
   }, [status, router, pathname]);
 

@@ -35,7 +35,7 @@ export function AuthShell({ children }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (status === 'authed' && !pathname.startsWith('/link')) router.replace('/chats');
+    if (status === 'authed' && !pathname.startsWith('/link')) router.replace('/feed');
   }, [status, router, pathname]);
 
   return (

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import sharp from 'sharp';
 import fs from 'node:fs/promises';
 import { Story, User, Conversation } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -26,7 +27,7 @@ export const uploadFiles = asyncHandler(async (req, res) => {
 
 export const deleteUpload = asyncHandler(async (req, res) => {
   const { bucket, filename } = req.params;
-  if (!['media', 'stories', 'voice'].includes(bucket) || filename.includes('..')) {
+  if (!['media', 'stories', 'voice', 'posts'].includes(bucket) || filename.includes('..')) {
     throw ApiError.badRequest('Bad path', 'BAD_PATH');
   }
   await fs.unlink(path.join(uploadRoot, bucket, filename)).catch(() => {});
@@ -234,4 +235,88 @@ export const reactToStory = asyncHandler(async (req, res) => {
   });
 
   res.json({ success: true });
+});
+
+/* ────────────────────────────── feed media ──────────────────────────────
+   Unlike a chat attachment, a post's picture arrives as plaintext — see the
+   note on the Post model for why — which means the server can and should do
+   the work the browser would otherwise have to: normalise the orientation,
+   cap the dimensions, re-encode to WebP, and produce the blurred placeholder
+   that holds the card's shape while the real image loads.
+
+   Video is passed through untouched. Transcoding needs ffmpeg, which is not a
+   dependency of this project, and shipping a half-transcode would be worse
+   than shipping none. */
+
+const POST_MAX_EDGE = 1440;
+const PLACEHOLDER_EDGE = 20;
+
+export const uploadPostMedia = asyncHandler(async (req, res) => {
+  if (!req.files?.length) throw ApiError.badRequest('No files received', 'NO_FILES');
+
+  const out = [];
+
+  for (const file of req.files) {
+    if (file.mimetype.startsWith('video/')) {
+      out.push({
+        kind: 'video',
+        url: '/uploads/posts/' + path.basename(file.path),
+        size: file.size,
+        width: null,
+        height: null,
+        placeholder: null,
+      });
+      continue;
+    }
+
+    const name = 'p_' + path.basename(file.filename, path.extname(file.filename)) + '.webp';
+    const target = path.join(uploadRoot, 'posts', name);
+
+    try {
+      const resized = await sharp(file.path, { animated: true })
+        .rotate()
+        .resize({
+          width: POST_MAX_EDGE,
+          height: POST_MAX_EDGE,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 84 })
+        .toFile(target);
+
+      /* Twenty pixels wide, inlined into the JSON. It costs well under a
+         kilobyte and it is the difference between a feed that settles into
+         place and one that jumps every time a picture lands. */
+      const placeholder = await sharp(file.path)
+        .rotate()
+        .resize(PLACEHOLDER_EDGE, PLACEHOLDER_EDGE, { fit: 'inside' })
+        .blur(1.4)
+        .webp({ quality: 40 })
+        .toBuffer();
+
+      out.push({
+        kind: 'image',
+        url: '/uploads/posts/' + name,
+        width: resized.width,
+        height: resized.height,
+        size: resized.size,
+        placeholder: 'data:image/webp;base64,' + placeholder.toString('base64'),
+      });
+
+      await fs.unlink(file.path).catch(() => {});
+    } catch {
+      /* An exotic codec sharp will not open is not a reason to lose the post.
+         Keep the original bytes and let the browser have a go at them. */
+      out.push({
+        kind: 'image',
+        url: '/uploads/posts/' + path.basename(file.path),
+        size: file.size,
+        width: null,
+        height: null,
+        placeholder: null,
+      });
+    }
+  }
+
+  res.status(201).json({ success: true, files: out });
 });

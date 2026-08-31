@@ -34,6 +34,7 @@ export const useChat = create((set, get) => ({
   threadLoading: {},
   presence: {}, // userId -> boolean
   stories: [],
+  replyTo: null,
   loaded: false,
   showArchived: false,
   search: '',
@@ -875,6 +876,9 @@ export const useChat = create((set, get) => ({
     set({ stories: data.rings });
     return data.rings;
   },
+
+  setReplyTo: (replyTo) => set({ replyTo }),
+  clearReplyTo: () => set({ replyTo: null }),
 
   setSearch: (search) => set({ search }),
   reset: () =>

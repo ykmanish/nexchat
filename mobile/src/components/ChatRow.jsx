@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Check, CheckCheck, Pin, BellOff, Image as ImageIcon, Mic, FileText, Video } from 'lucide-react-native';
 import { Avatar } from './Avatar';
 import { shortTime } from '../lib/utils';
-import { useTheme } from '../theme';
+import { useTheme, font } from '../theme';
 
 /**
  * One row of the chat list.
@@ -49,7 +49,7 @@ function ChatRowInner({ conversation, preview, mine, online, onPress, onLongPres
           <Text
             style={[
               styles.time,
-              { color: unread ? theme.accent : theme.inkFaint },
+              { color: unread ? theme.accentStrong : theme.inkFaint },
               unread > 0 && styles.timeUnread,
             ]}
           >
@@ -66,7 +66,9 @@ function ChatRowInner({ conversation, preview, mine, online, onPress, onLongPres
             {c.pinned && <Pin size={14} color={theme.inkFaint} strokeWidth={2} />}
             {unread > 0 && (
               <View style={[styles.badge, { backgroundColor: theme.accent }]}>
-                <Text style={styles.badgeText}>{unread > 999 ? '999+' : unread}</Text>
+                <Text style={[styles.badgeText, { color: theme.accentInk }]}>
+                  {unread > 999 ? '999+' : unread}
+                </Text>
               </View>
             )}
           </View>
@@ -179,7 +181,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 13 },
   body: { flex: 1, gap: 3 },
   topLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { flex: 1, fontSize: 16.5, fontWeight: '600', letterSpacing: -0.2 },
+  title: { flex: 1, fontFamily: font.display, fontSize: 16.5, letterSpacing: -0.25 },
   time: { fontSize: 12 },
   timeUnread: { fontWeight: '700' },
   bottomLine: { flexDirection: 'row', alignItems: 'center', gap: 3 },
