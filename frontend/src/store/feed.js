@@ -30,6 +30,12 @@ const emptyList = () => ({ ids: [], cursor: null, hasMore: true, loading: false,
    the obvious one. */
 const EMPTY_LIST = Object.freeze(emptyList());
 
+/* Posts this tab has already reported a view for. Deliberately module-level
+   rather than store state: it is bookkeeping about requests, not something any
+   component renders, and putting it in the store would re-render the feed
+   every time a card scrolled past. */
+const seenThisSession = new Set();
+
 export const useFeed = create((set, get) => ({
   posts: {}, // id -> post
   lists: {
@@ -328,6 +334,34 @@ export const useFeed = create((set, get) => ({
       toast.error(err.message);
       return null;
     }
+  },
+
+  /**
+   * Records that this device has seen a post.
+   *
+   * Fired once per post per session — `seenThisSession` stops a card that
+   * scrolls in and out of view a dozen times from sending a dozen requests.
+   * The server counts once per person regardless; this just keeps the traffic
+   * honest. Failures are ignored: a view is a nicety, and there is nothing the
+   * reader could do about it.
+   */
+  markViewed(id) {
+    if (!id || seenThisSession.has(id)) return;
+    seenThisSession.add(id);
+    api.post('/posts/' + id + '/view').catch(() => {});
+  },
+
+  /**
+   * Counters pushed from the server because somebody, somewhere, acted.
+   *
+   * Only counts arrive — never `liked` or `saved`, which are answers about the
+   * viewer and would otherwise be overwritten with a stranger's.
+   */
+  applyStats({ postId, ...counts }) {
+    const known = Object.fromEntries(
+      Object.entries(counts).filter(([, value]) => typeof value === 'number')
+    );
+    if (Object.keys(known).length) get().patchPost(postId, known);
   },
 
   /** Counted server-side; the copy or native share happens at the call site. */

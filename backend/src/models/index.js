@@ -9,6 +9,7 @@ export { Story } from './Story.js';
 export { Post } from './Post.js';
 export { Comment } from './Comment.js';
 export { PostLike } from './PostLike.js';
+export { PostView } from './PostView.js';
 export { SavedPost } from './SavedPost.js';
 export { Follow } from './Follow.js';
 export { Call } from './Call.js';

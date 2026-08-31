@@ -558,6 +558,43 @@ await check('an empty post is refused', async () => {
   assert(refused, 'a post with no text and no media was accepted');
 });
 
+await check('a view is counted once per person, however often they look', async () => {
+  const { post: seen } = await post(author, { text: 'who saw this', audience: 'public' });
+
+  const fresh = await call('/posts/' + seen._id, { token: author.token });
+  assert(fresh.post.viewCount === 0, 'a new post already had views');
+
+  // The same person, three times over.
+  for (let i = 0; i < 3; i += 1) {
+    await call('/posts/' + seen._id + '/view', { method: 'POST', token: reader.token });
+  }
+  await call('/posts/' + seen._id + '/view', { method: 'POST', token: stranger.token });
+
+  const after = await call('/posts/' + seen._id, { token: author.token });
+  assert(after.post.viewCount === 2, 'viewCount is ' + after.post.viewCount + ', expected 2');
+});
+
+await check('every counter is readable back off the post', async () => {
+  const { post: target } = await post(author, { text: 'counters', audience: 'public' });
+
+  await call('/posts/' + target._id + '/like', { method: 'POST', token: reader.token });
+  await call('/posts/' + target._id + '/save', { method: 'POST', token: reader.token });
+  await call('/posts/' + target._id + '/share', { method: 'POST', token: reader.token });
+  await call('/posts/' + target._id + '/view', { method: 'POST', token: reader.token });
+  await call('/posts/' + target._id + '/comments', {
+    method: 'POST',
+    body: { text: 'a comment' },
+    token: reader.token,
+  });
+
+  const { post: after } = await call('/posts/' + target._id, { token: author.token });
+  assert(after.likeCount === 1, 'likeCount ' + after.likeCount);
+  assert(after.saveCount === 1, 'saveCount ' + after.saveCount);
+  assert(after.shareCount === 1, 'shareCount ' + after.shareCount);
+  assert(after.viewCount === 1, 'viewCount ' + after.viewCount);
+  assert(after.commentCount === 1, 'commentCount ' + after.commentCount);
+});
+
 await check('explore leaves your own posts out', async () => {
   const { posts } = await call('/posts/explore', { token: author.token });
   assert(

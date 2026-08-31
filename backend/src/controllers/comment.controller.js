@@ -1,7 +1,14 @@
 import { Post, Comment, PostLike, User } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { notify, encodeCursor, decodeCursor, olderThan, AUTHOR_FIELDS } from './post.controller.js';
+import {
+  notify,
+  publishStats,
+  encodeCursor,
+  decodeCursor,
+  olderThan,
+  AUTHOR_FIELDS,
+} from './post.controller.js';
 
 const MENTION = /@([a-z0-9_.]{3,24})/gi;
 
@@ -142,6 +149,7 @@ export const addComment = asyncHandler(async (req, res) => {
     root ? Comment.updateOne({ _id: root._id }, { $inc: { replyCount: 1 } }) : null,
   ]);
 
+  await publishStats(post._id);
   notify(post.author, 'post:commented', { postId: String(post._id) }, req.user);
   if (root && String(root.author) !== String(post.author)) {
     notify(root.author, 'post:replied', { postId: String(post._id) }, req.user);
@@ -188,6 +196,7 @@ export const deleteComment = asyncHandler(async (req, res) => {
     Post.updateOne({ _id: comment.post }, { $inc: { commentCount: -1 } }),
     PostLike.deleteMany({ comment: comment._id }),
   ]);
+  await publishStats(comment.post);
 
   res.json({ success: true });
 });

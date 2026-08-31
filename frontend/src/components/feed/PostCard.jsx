@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { MoreHorizontal, Globe, Users, Lock, Repeat2, MapPin, Pin } from 'lucide-react';
@@ -52,6 +52,7 @@ export const PostCard = memo(function PostCard({
 
   const toggleLike = useFeed((s) => s.toggleLike);
   const toggleSave = useFeed((s) => s.toggleSave);
+  const markViewed = useFeed((s) => s.markViewed);
 
   const original = post.repostOf || post;
   const isBoost = !!post.repostOf && !post.text;
@@ -89,10 +90,45 @@ export const PostCard = memo(function PostCard({
   /* One door for every control when there is no session behind them. */
   const guard = (action) => (readOnly ? () => onRequireAuth?.() : action);
 
+  /**
+   * Counts a view once the card has actually been looked at.
+   *
+   * A second of dwell, not a bare intersection: a card that flashes past under
+   * a fast scroll was not read by anybody, and counting it would make the
+   * number mean "how far did people scroll" instead of "how many people saw
+   * this". Guests are not counted — there is nobody to count.
+   */
+  const cardRef = useRef(null);
+
+  useEffect(() => {
+    const node = cardRef.current;
+    if (!node || readOnly || !body._id) return undefined;
+
+    let timer = null;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          timer = setTimeout(() => markViewed(body._id), 1000);
+        } else if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      },
+      { threshold: 0.5 }
+    );
+
+    observer.observe(node);
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [body._id, readOnly, markViewed]);
+
   const Audience = AUDIENCE[body.audience]?.icon || Globe;
 
   return (
     <motion.article
+      ref={cardRef}
       initial={priority ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
@@ -315,6 +351,7 @@ const fields = (post) =>
         post.commentCount,
         post.repostCount,
         post.shareCount,
+        post.viewCount,
         post.commentsDisabled,
         post.hideCounts,
         post.pinned,

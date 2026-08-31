@@ -363,19 +363,21 @@ function SocketBridge() {
          the wire — two people liking at once would otherwise each report a
          count of one. */
       'post:new': ({ post }) => useFeed.getState().receivePost(post),
+
+      /* Counters, pushed to everyone rather than to the author alone: two
+         people looking at the same card should be reading the same numbers. */
+      'post:stats': (payload) => useFeed.getState().applyStats(payload),
+
       'post:deleted': ({ postId }) => useFeed.getState().removePost(postId),
 
-      'post:liked': ({ postId, by }) => {
-        const feed = useFeed.getState();
-        if (!feed.posts[postId]) return;
-        feed.loadPost(postId).catch(() => {});
+      /* The count already arrived on post:stats; this is only the nudge that
+         it was *your* post somebody liked. */
+      'post:liked': ({ by }) => {
         if (String(by?._id) !== String(me()._id)) feedback('react');
       },
 
       'post:commented': ({ postId }) => {
         const feed = useFeed.getState();
-        if (!feed.posts[postId]) return;
-        feed.loadPost(postId).catch(() => {});
         /* Only reload the thread if it is actually open — refetching comments
            for a post nobody is looking at is a request for nothing. */
         if (feed.comments[postId]) feed.loadComments(postId, { refresh: true });
@@ -384,12 +386,6 @@ function SocketBridge() {
       'post:replied': ({ postId }) => {
         const feed = useFeed.getState();
         if (feed.comments[postId]) feed.loadComments(postId, { refresh: true });
-      },
-
-      'post:reposted': ({ postId }) => {
-        if (useFeed.getState().posts[postId]) {
-          useFeed.getState().loadPost(postId).catch(() => {});
-        }
       },
 
       'comment:liked': ({ postId }) => {

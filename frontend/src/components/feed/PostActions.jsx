@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Heart, MessageCircle, Repeat2, Send, Bookmark } from 'lucide-react';
+import { Heart, MessageCircle, Repeat2, Send, Bookmark, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { countLabel } from '@/store/feed';
 
@@ -65,6 +65,21 @@ export function PostActions({
           size={size - 1}
           onClick={onShare}
         />
+
+        {/* Not a button — nobody can act on a view, and a control that does
+            nothing when tapped is worse than a number that never looked like
+            one. Sits with the rest because that is where the eye already is. */}
+        {post.viewCount > 0 && (
+          <span
+            title={countLabel(post.viewCount) + ' viewed this'}
+            className="flex select-none items-center gap-1.5 py-1.5 pl-2 pr-2.5 text-ink-muted"
+          >
+            <Eye size={size - 2} strokeWidth={1.85} />
+            <span className="text-[13px] font-medium tabular-nums leading-none">
+              {countLabel(post.viewCount)}
+            </span>
+          </span>
+        )}
       </div>
 
       <Action

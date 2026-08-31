@@ -2,42 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ImagePlus, Sparkles, Hash, RefreshCw } from 'lucide-react';
+import { Sparkles, Hash, RefreshCw } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
-import { useAuth } from '@/store/auth';
-import { useUI } from '@/store/ui';
 import { useFeed, countLabel } from '@/store/feed';
 import { FollowButton } from './FollowButton';
-
-/** The "share something" row that opens the composer. */
-export function ComposerTrigger() {
-  const user = useAuth((s) => s.user);
-  const openSheet = useUI((s) => s.openSheet);
-
-  return (
-    <div className="flex items-center gap-3 border-b border-line bg-surface px-4 py-3 sm:rounded-2xl sm:border">
-      <Avatar src={user?.avatar} name={user?.name} color={user?.avatarColor} size="sm" />
-
-      <button
-        type="button"
-        onClick={() => openSheet('newPost')}
-        className="h-10 min-w-0 flex-1 rounded-full bg-surface-2 px-4 text-left text-[14.5px] text-ink-faint transition-colors hover:bg-surface-3"
-      >
-        Share something, {user?.name?.split(' ')[0] || 'you'}…
-      </button>
-
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.9 }}
-        onClick={() => openSheet('newPost', { withMedia: true })}
-        aria-label="New photo post"
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-tint text-brand-strong transition-colors hover:brightness-95"
-      >
-        <ImagePlus size={19} strokeWidth={1.9} />
-      </motion.button>
-    </div>
-  );
-}
 
 /** Placeholder cards, shaped like the real thing so nothing jumps on arrival. */
 export function FeedSkeleton({ count = 3 }) {

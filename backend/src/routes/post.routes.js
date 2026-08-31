@@ -43,6 +43,7 @@ router.delete('/:id/save', post.unsavePost);
 
 router.delete('/:id/repost', post.unrepost);
 router.post('/:id/share', post.sharePost);
+router.post('/:id/view', post.viewPost);
 
 router.get('/:id/comments', comment.listComments);
 router.post('/:id/comments', validate(v.commentSchema), comment.addComment);

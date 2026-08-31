@@ -61,6 +61,7 @@ const postSchema = new mongoose.Schema(
     saveCount: { type: Number, default: 0, min: 0 },
     repostCount: { type: Number, default: 0, min: 0 },
     shareCount: { type: Number, default: 0, min: 0 },
+    viewCount: { type: Number, default: 0, min: 0 },
 
     commentsDisabled: { type: Boolean, default: false },
     /** The author's own counts stay visible to them; everyone else sees none. */

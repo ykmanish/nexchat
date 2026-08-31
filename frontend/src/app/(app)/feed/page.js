@@ -8,11 +8,7 @@ import { useUI } from '@/store/ui';
 import { useChat } from '@/store/chat';
 import { StoryRail } from '@/components/chat/StoryRail';
 import { FeedList } from '@/components/feed/FeedList';
-import {
-  ComposerTrigger,
-  WhoToFollow,
-  TrendingTags,
-} from '@/components/feed/FeedPieces';
+import { WhoToFollow, TrendingTags } from '@/components/feed/FeedPieces';
 import { Logo } from '@/components/brand/Logo';
 import { IconButton } from '@/components/ui/Button';
 
@@ -100,10 +96,6 @@ export default function FeedPage() {
           <main className="w-full min-w-0 max-w-[600px] py-0 sm:py-4">
             <div className="border-b border-line bg-surface pt-2 sm:mb-3 sm:rounded-2xl sm:border">
               <StoryRail />
-            </div>
-
-            <div className="hidden lg:mb-3 lg:block">
-              <ComposerTrigger />
             </div>
 
             {discover && (

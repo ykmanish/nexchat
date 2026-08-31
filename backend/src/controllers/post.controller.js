@@ -1,6 +1,14 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { Post, PostLike, SavedPost, Follow, User, Conversation } from '../models/index.js';
+import {
+  Post,
+  PostLike,
+  PostView,
+  SavedPost,
+  Follow,
+  User,
+  Conversation,
+} from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { uploadRoot } from '../middleware/upload.js';
@@ -160,6 +168,7 @@ async function hydrate(posts, viewer) {
       commentCount: post.commentCount,
       repostCount: post.repostCount,
       shareCount: post.shareCount,
+      viewCount: post.viewCount,
       commentsDisabled: post.commentsDisabled,
       hideCounts: post.hideCounts,
       pinned: post.pinned,
@@ -407,6 +416,7 @@ export const createPost = asyncHandler(async (req, res) => {
   if (original) {
     await Post.updateOne({ _id: original._id }, { $inc: { repostCount: 1 } });
     notify(original.author, 'post:reposted', { postId: String(original._id) }, req.user);
+    await publishStats(original._id);
   }
 
   post.mentions.forEach((id) =>
@@ -504,6 +514,7 @@ export const likePost = asyncHandler(async (req, res) => {
   if (result.upsertedCount) {
     await Post.updateOne({ _id: post._id }, { $inc: { likeCount: 1 } });
     notify(post.author, 'post:liked', { postId: String(post._id) }, req.user);
+    broadcastStats(post._id, { likeCount: post.likeCount + 1 });
   }
 
   res.json({
@@ -522,7 +533,10 @@ export const unlikePost = asyncHandler(async (req, res) => {
     post: post._id,
     comment: null,
   });
-  if (deletedCount) await Post.updateOne({ _id: post._id }, { $inc: { likeCount: -1 } });
+  if (deletedCount) {
+    await Post.updateOne({ _id: post._id }, { $inc: { likeCount: -1 } });
+    broadcastStats(post._id, { likeCount: Math.max(0, post.likeCount - 1) });
+  }
 
   res.json({
     success: true,
@@ -577,14 +591,20 @@ export const savePost = asyncHandler(async (req, res) => {
     { $setOnInsert: { user: req.user._id, post: post._id } },
     { upsert: true }
   );
-  if (result.upsertedCount) await Post.updateOne({ _id: post._id }, { $inc: { saveCount: 1 } });
+  if (result.upsertedCount) {
+    await Post.updateOne({ _id: post._id }, { $inc: { saveCount: 1 } });
+    broadcastStats(post._id, { saveCount: post.saveCount + 1 });
+  }
 
   res.json({ success: true, saved: true });
 });
 
 export const unsavePost = asyncHandler(async (req, res) => {
   const { deletedCount } = await SavedPost.deleteOne({ user: req.user._id, post: req.params.id });
-  if (deletedCount) await Post.updateOne({ _id: req.params.id }, { $inc: { saveCount: -1 } });
+  if (deletedCount) {
+    await Post.updateOne({ _id: req.params.id }, { $inc: { saveCount: -1 } });
+    await publishStats(req.params.id);
+  }
   res.json({ success: true, saved: false });
 });
 
@@ -600,6 +620,7 @@ export const unrepost = asyncHandler(async (req, res) => {
   repost.deletedAt = new Date();
   await repost.save();
   await Post.updateOne({ _id: req.params.id }, { $inc: { repostCount: -1 } });
+  await publishStats(req.params.id);
 
   res.json({ success: true, reposted: false });
 });
@@ -612,6 +633,7 @@ export const sharePost = asyncHandler(async (req, res) => {
     { new: true }
   );
   if (!post) throw ApiError.notFound('Post not found', 'NO_POST');
+  broadcastStats(post._id, { shareCount: post.shareCount });
   res.json({ success: true, shareCount: post.shareCount });
 });
 
@@ -717,3 +739,69 @@ export const sharedPost = asyncHandler(async (req, res) => {
     post: { ...shape(post), repostOf: post.repostOf ? shape(post.repostOf) : null },
   });
 });
+
+/* ────────────────────────────── live counters ──────────────────────────────
+   Every number on a card is broadcast the moment it moves, so two people
+   looking at the same post watch the same figures.
+
+   Broadcast rather than sent to the author's room, which is what the
+   notification events do. Those answer "something happened to your post" and
+   belong to one person; a counter is what everybody currently looking at that
+   card is reading, and sending it only to the author left every other reader
+   on a stale number until they reloaded.
+
+   Only counts travel. `liked` and `saved` are answers to "did *I*", and one
+   person's yes is not another's. */
+
+function broadcastStats(postId, counts) {
+  getIO()?.emit('post:stats', { postId: String(postId), ...counts });
+}
+
+/** Re-reads the counters straight from the document and publishes them. */
+async function publishStats(postId) {
+  const fresh = await Post.findById(postId)
+    .select('likeCount commentCount repostCount shareCount saveCount viewCount')
+    .lean();
+  if (!fresh) return;
+
+  broadcastStats(postId, {
+    likeCount: fresh.likeCount,
+    commentCount: fresh.commentCount,
+    repostCount: fresh.repostCount,
+    shareCount: fresh.shareCount,
+    saveCount: fresh.saveCount,
+    viewCount: fresh.viewCount,
+  });
+}
+
+/**
+ * Records that somebody has seen this post.
+ *
+ * Counted once per person, ever — the unique index on (user, post) decides,
+ * and the counter only moves when a row was actually inserted. Scrolling the
+ * same card past twice is one view, which is the only reading of the number
+ * that is worth showing.
+ *
+ * Answers 204 either way. The client fires this and forgets it; there is
+ * nothing useful it could do with a failure.
+ */
+export const viewPost = asyncHandler(async (req, res) => {
+  const result = await PostView.updateOne(
+    { user: req.user._id, post: req.params.id },
+    { $setOnInsert: { user: req.user._id, post: req.params.id } },
+    { upsert: true }
+  );
+
+  if (result.upsertedCount) {
+    const post = await Post.findOneAndUpdate(
+      { _id: req.params.id, deletedAt: null },
+      { $inc: { viewCount: 1 } },
+      { new: true, projection: 'viewCount' }
+    );
+    if (post) broadcastStats(post._id, { viewCount: post.viewCount });
+  }
+
+  res.status(204).end();
+});
+
+export { publishStats, broadcastStats };
