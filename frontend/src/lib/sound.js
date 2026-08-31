@@ -8,39 +8,178 @@
 
 let ctx = null;
 let master = null;
+let ringBus = null;
 let enabled = true;
+let ringEnabled = true;
 let unlocked = false;
 
+/**
+ * Two buses, not one.
+ *
+ * `master` carries the interface: taps, sends, receipts. It is deliberately
+ * quiet — those sounds sit under what you are doing and must never startle.
+ *
+ * `ringBus` carries the ringtone, the ringback and the decline tone, and it is
+ * loud. A ringtone that has been attenuated to the level of a button tick is a
+ * ringtone nobody answers; it has to carry from a pocket, across a room, over
+ * whatever else is playing. It is also independent of "Play sounds in the app",
+ * whose own sublabel scopes that setting to "Send, receive, and reaction
+ * tones" — silencing calls was never what it offered to do. Calls follow the
+ * Calls notification toggle instead, via `setRingEnabled`.
+ */
 function audio() {
   if (typeof window === 'undefined') return null;
   if (!ctx) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return null;
     ctx = new AudioCtx();
+
     master = ctx.createGain();
     master.gain.value = 0.4;
     master.connect(ctx.destination);
+
+    ringBus = ctx.createGain();
+    ringBus.gain.value = 0.95;
+    ringBus.connect(ctx.destination);
   }
   return ctx;
 }
 
-/** Browsers require a gesture before audio can start. */
+/**
+ * Browsers require a gesture before audio can start.
+ *
+ * The drain has to hang off the promise, not off a state check underneath it:
+ * `resume()` is asynchronous, so the context is still 'suspended' on the line
+ * after the call and a synchronous check finds nothing to do. A ringtone
+ * waiting on the gesture would have gone on waiting forever.
+ */
 export function unlockAudio() {
   const c = audio();
   if (!c) return;
-  if (c.state === 'suspended') c.resume();
   unlocked = true;
+  if (c.state === 'suspended') {
+    c.resume().then(drainWaiting).catch(() => {});
+  } else {
+    drainWaiting();
+  }
 }
 
 export function setSoundEnabled(value) {
   enabled = !!value;
 }
 
+/** Whether calls may ring. Wired to the Calls notification setting. */
+export function setRingEnabled(value) {
+  ringEnabled = !!value;
+}
+
 export function setVolume(value) {
   if (master) master.gain.value = Math.max(0, Math.min(1, value));
 }
 
-/** One shaped sine/triangle blip. The building block for everything below. */
+/* ─────────────────── getting sound out of a cold page ───────────────────
+ *
+ * The hard case for a ringtone is the one that matters most: a call arrives at
+ * a tab the user has not touched since it loaded. There has been no gesture, so
+ * the AudioContext is suspended, `resume()` is refused, and the phone that
+ * should be ringing sits there in silence — the receiving half of "calls don't
+ * ring".
+ *
+ * So a ring does not assume it can make a sound. It asks to be run when audio
+ * is actually permitted: now if the context is running, otherwise on the very
+ * next gesture anywhere in the page. Tapping the screen — or the notification
+ * that goes up as the fallback — starts the ring mid-cadence rather than never.
+ */
+const waiting = new Set();
+let armed = false;
+
+function drainWaiting() {
+  const pending = [...waiting];
+  waiting.clear();
+  pending.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      /* one failed ring must not take the others with it */
+    }
+  });
+}
+
+/* Note for anyone editing the pair above and below: the entries in `waiting`
+   must be idempotent rather than self-removing. An entry that guarded itself
+   with `waiting.delete(...)` never ran, because `drainWaiting` clears the set
+   before it calls anything — two guards that between them let nothing through,
+   and a ringtone that stayed silent on exactly the cold tab it exists for. */
+
+function armGesture() {
+  if (armed || typeof window === 'undefined') return;
+  armed = true;
+  const fire = () => {
+    armed = false;
+    window.removeEventListener('pointerdown', fire);
+    window.removeEventListener('keydown', fire);
+    window.removeEventListener('touchstart', fire);
+    unlockAudio();
+  };
+  window.addEventListener('pointerdown', fire, { once: true });
+  window.addEventListener('keydown', fire, { once: true });
+  window.addEventListener('touchstart', fire, { once: true });
+}
+
+/**
+ * Runs `start` as soon as audio is allowed, and returns a stop function that is
+ * correct either way — including when it is called before the sound ever began.
+ */
+function whenAudible(start) {
+  const c = audio();
+  if (!c) return () => {};
+
+  let stop = null;
+  let cancelled = false;
+  let started = false;
+
+  /* Idempotent, because there are two ways in — our own `resume()` resolving,
+     and the next gesture anywhere on the page — and whichever arrives first
+     should be the one that rings. */
+  const begin = () => {
+    if (cancelled || started) return;
+    started = true;
+    stop = start() || null;
+  };
+
+  if (c.state === 'suspended') {
+    c.resume().then(begin).catch(() => {});
+  }
+
+  if (c.state === 'running') {
+    begin();
+  } else {
+    waiting.add(begin);
+    armGesture();
+  }
+
+  return () => {
+    cancelled = true;
+    waiting.delete(begin);
+    stop?.();
+    stop = null;
+  };
+}
+
+/** Whether audio can be heard right now, so a caller can pick a fallback. */
+export const canPlayNow = () => {
+  const c = audio();
+  return !!c && c.state === 'running';
+};
+
+/**
+ * One shaped sine/triangle blip. The building block for everything below.
+ *
+ * Returns the oscillator, so a scheduled pattern can be cancelled. A ringtone
+ * lays its whole cadence down on the audio clock in advance — see `ring` — and
+ * answering the call has to be able to silence the bursts that have been
+ * scheduled but not yet sounded.
+ */
 function tone({
   freq = 660,
   duration = 0.12,
@@ -49,10 +188,13 @@ function tone({
   delay = 0,
   sweepTo = null,
   attack = 0.006,
+  bus = 'ui',
 } = {}) {
   const c = audio();
-  if (!c || !enabled) return;
-  if (c.state === 'suspended') c.resume();
+  const ring = bus === 'ring';
+  if (!c) return null;
+  if (ring ? !ringEnabled : !enabled) return null;
+  if (c.state === 'suspended') c.resume().catch(() => {});
 
   const start = c.currentTime + delay;
   const osc = c.createOscillator();
@@ -67,9 +209,10 @@ function tone({
   env.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
   osc.connect(env);
-  env.connect(master);
+  env.connect(ring ? ringBus : master);
   osc.start(start);
   osc.stop(start + duration + 0.02);
+  return osc;
 }
 
 /** Short filtered noise burst — used for the swipe and camera sounds. */
@@ -101,6 +244,55 @@ function noise({ duration = 0.08, gain = 0.14, filterFreq = 1800, delay = 0 } = 
   env.connect(master);
   src.start(start);
 }
+
+/* ────────────────────────────── haptics ────────────────────────────── */
+
+/* Declared above `sounds` because the ringtone reaches for `buzz`: the ring and
+   the vibration are one event, and a phone that rings without buzzing is only
+   half of an incoming call. */
+
+let hapticsEnabled = true;
+export const setHapticsEnabled = (v) => {
+  hapticsEnabled = !!v;
+};
+
+const buzz = (pattern) => {
+  if (!hapticsEnabled) return;
+  if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(pattern);
+};
+
+export const haptics = {
+  light: () => buzz(8),
+  medium: () => buzz(14),
+  heavy: () => buzz(24),
+  success: () => buzz([10, 40, 18]),
+  warning: () => buzz([16, 60, 16]),
+  error: () => buzz([24, 50, 24, 50, 24]),
+  selection: () => buzz(5),
+  impact: () => buzz([6, 20, 12]),
+
+  /* ── calls ──
+     Longer and firmer than anything in the interface set. These mark the two
+     moments in a call you should be able to feel without looking: the answer,
+     and the refusal. `callAccepted` is two pulses with the second the longer of
+     them — it rises, the way the tone beside it does. `callDeclined` falls away
+     in three shortening buzzes, the tactile shape of its own falling tone. */
+  callAccepted: () => buzz([26, 70, 42]),
+  callDeclined: () => buzz([60, 90, 40, 90, 24]),
+
+  /** One cycle of the ringtone's buzz, for previewing it in settings. */
+  ringtone: () => buzz([500, 240, 500]),
+};
+
+/* The ringtone's cadence, and how much of it is scheduled up front.
+   45 seconds is what the server waits before it marks a call missed
+   (`call:start` in backend/src/sockets/call.handlers.js), so the ring is laid
+   down to cover that window and never needs a refill. */
+const RING_CYCLE = 4;
+/* One cycle past the timeout rather than exactly up to it: a ring that ends on
+   the same second the server gives up leaves a beat of silence that reads as
+   the call having been answered. */
+const RING_CYCLES = 13;
 
 export const sounds = {
   /** Soft tick under every button press. */
@@ -188,27 +380,122 @@ export const sounds = {
     tone({ freq: 1980, duration: 0.3, gain: 0.08, delay: 0.21 });
   },
 
-  /** Repeating ring for an incoming call — returns a stop function. */
+  /**
+   * The ringtone for an incoming call. Returns a stop function.
+   *
+   * Scheduled on the audio clock rather than driven by `setInterval`, which is
+   * the fix for a ringtone that used to die a few seconds in: a background tab
+   * has its timers throttled hard — to once a minute, eventually — so a ring
+   * built out of intervals rings twice and then gives up, in exactly the case
+   * where a phone most needs to keep ringing. Web Audio's own clock is never
+   * throttled, so the full cadence is laid down in advance and cancelled on
+   * answer.
+   *
+   * Two bell bursts, then a pause; a four-second cycle, repeated across the
+   * whole window the server will wait before marking the call missed.
+   */
   ring: () => {
-    if (!enabled) return () => {};
-    const play = () => {
-      tone({ freq: 880, duration: 0.32, gain: 0.22 });
-      tone({ freq: 1174, duration: 0.32, gain: 0.16, delay: 0.02 });
-      tone({ freq: 880, duration: 0.32, gain: 0.22, delay: 0.42 });
-      tone({ freq: 1174, duration: 0.32, gain: 0.16, delay: 0.44 });
-    };
-    play();
-    const timer = setInterval(play, 2400);
-    return () => clearInterval(timer);
+    if (!ringEnabled) return () => {};
+
+    return whenAudible(() => {
+      const scheduled = [];
+      const burst = (at) => {
+        // The chord under it is what makes this read as a *ring* rather than as
+        // a loud version of the message tone: a fifth below, and a soft
+        // triangle body carrying most of the level.
+        scheduled.push(
+          tone({ freq: 880, duration: 0.42, gain: 0.5, delay: at, bus: 'ring' }),
+          tone({ freq: 1174, duration: 0.42, gain: 0.34, delay: at + 0.02, bus: 'ring' }),
+          tone({ freq: 587, duration: 0.46, gain: 0.2, delay: at, type: 'triangle', bus: 'ring' }),
+          tone({ freq: 880, duration: 0.42, gain: 0.5, delay: at + 0.56, bus: 'ring' }),
+          tone({ freq: 1174, duration: 0.42, gain: 0.34, delay: at + 0.58, bus: 'ring' }),
+          tone({
+            freq: 587,
+            duration: 0.46,
+            gain: 0.2,
+            delay: at + 0.56,
+            type: 'triangle',
+            bus: 'ring',
+          })
+        );
+      };
+
+      for (let i = 0; i < RING_CYCLES; i += 1) burst(i * RING_CYCLE);
+
+      // One vibration call, not one per cycle. `navigator.vibrate` takes an
+      // arbitrarily long on/off pattern, so the entire ring is handed over in a
+      // single call — which, like the audio clock above, sidesteps background
+      // timer throttling completely.
+      const pattern = [];
+      for (let i = 0; i < RING_CYCLES; i += 1) pattern.push(500, 240, 500, 2760);
+      buzz(pattern);
+
+      return () => {
+        scheduled.forEach((osc) => {
+          try {
+            osc?.stop();
+          } catch {
+            /* already finished — nothing to stop */
+          }
+        });
+        buzz(0);
+      };
+    });
   },
 
-  /** Outgoing call dial tone. */
+  /**
+   * The ringback the caller hears while the other phone rings.
+   *
+   * Quieter and plainer than the ringtone on purpose: this one is held against
+   * an ear, and its whole job is to say the line is open and nobody has picked
+   * up yet. Same audio-clock scheduling, and no vibration — your own phone
+   * buzzing at you while you wait would be nonsense.
+   */
   dial: () => {
-    if (!enabled) return () => {};
-    const play = () => tone({ freq: 440, duration: 0.9, gain: 0.09, type: 'sine' });
-    play();
-    const timer = setInterval(play, 3000);
-    return () => clearInterval(timer);
+    if (!ringEnabled) return () => {};
+
+    return whenAudible(() => {
+      const scheduled = [];
+      for (let i = 0; i < RING_CYCLES; i += 1) {
+        const at = i * RING_CYCLE;
+        scheduled.push(
+          tone({ freq: 440, duration: 0.8, gain: 0.22, delay: at, bus: 'ring' }),
+          tone({ freq: 480, duration: 0.8, gain: 0.16, delay: at, bus: 'ring' })
+        );
+      }
+      return () => {
+        scheduled.forEach((osc) => {
+          try {
+            osc?.stop();
+          } catch {
+            /* already finished */
+          }
+        });
+      };
+    });
+  },
+
+  /**
+   * The call was declined.
+   *
+   * Deliberately not `hangup`: a call that ended and a call that was refused
+   * are different events, and hearing the same tone for both leaves you
+   * checking the screen to find out which happened. This one falls — two
+   * descending notes over a short busy-signal pulse — and it plays on the ring
+   * bus, so the person who has been holding a phone to their ear actually
+   * hears it.
+   */
+  declined: () => {
+    tone({ freq: 480, duration: 0.22, gain: 0.3, type: 'triangle', bus: 'ring' });
+    tone({ freq: 360, duration: 0.3, gain: 0.28, type: 'triangle', delay: 0.2, bus: 'ring' });
+    tone({ freq: 300, duration: 0.34, gain: 0.2, type: 'sine', delay: 0.42, bus: 'ring' });
+  },
+
+  /** The call was answered and media is coming up — a short confident rise. */
+  connected: () => {
+    tone({ freq: 660, duration: 0.1, gain: 0.26, bus: 'ring' });
+    tone({ freq: 880, duration: 0.1, gain: 0.24, delay: 0.08, bus: 'ring' });
+    tone({ freq: 1320, duration: 0.22, gain: 0.16, delay: 0.16, bus: 'ring' });
   },
 
   hangup: () => {
@@ -222,29 +509,6 @@ export const sounds = {
   },
 
   typing: () => tone({ freq: 1500, duration: 0.02, gain: 0.04 }),
-};
-
-/* ────────────────────────────── haptics ────────────────────────────── */
-
-let hapticsEnabled = true;
-export const setHapticsEnabled = (v) => {
-  hapticsEnabled = !!v;
-};
-
-const buzz = (pattern) => {
-  if (!hapticsEnabled) return;
-  if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(pattern);
-};
-
-export const haptics = {
-  light: () => buzz(8),
-  medium: () => buzz(14),
-  heavy: () => buzz(24),
-  success: () => buzz([10, 40, 18]),
-  warning: () => buzz([16, 60, 16]),
-  error: () => buzz([24, 50, 24, 50, 24]),
-  selection: () => buzz(5),
-  impact: () => buzz([6, 20, 12]),
 };
 
 /** The one call most components need: a click sound plus a matching tap. */
@@ -264,6 +528,9 @@ export function feedback(kind = 'tap') {
     linked: haptics.success,
     recordStart: haptics.medium,
     recordStop: haptics.medium,
+    declined: haptics.callDeclined,
+    connected: haptics.callAccepted,
+    hangup: haptics.medium,
   };
   map[kind]?.();
 }

@@ -25,7 +25,8 @@ import { useUI, toast } from '@/store/ui';
 import { Avatar } from '@/components/ui/Avatar';
 import { cn, duration } from '@/lib/utils';
 import { emit } from '@/lib/socket';
-import { sounds, feedback } from '@/lib/sound';
+import { sounds, feedback, haptics, canPlayNow } from '@/lib/sound';
+import { CALL_STATUS_BAR, setStatusBarOverride } from '@/lib/theme';
 import { startCall, hasTurn, CALL_STATES } from '@/lib/webrtc';
 
 /**
@@ -68,21 +69,118 @@ export function CallOverlay() {
   const stopRinging = useRef(null);
 
   const isVideo = call?.mode === 'video';
-  const active = call?.status === 'active';
+  /* `callStatus`, not `status`: further down, `status` is already the line of
+     text rendered under the peer's name. Two different meanings of the same
+     word in one component, so the one that arrived second takes the longer
+     name rather than shadowing the other. */
+  const callStatus = call?.status;
+  const direction = call?.direction;
+  const active = callStatus === 'active';
   const peerName = call?.from?.name || call?.peer?.name || 'Unknown';
   const peerId = call?.from?.id || call?.peerId;
 
-  /* ── ringtone ── */
+  /* ── ringtone ──
+     Incoming gets the ringtone and the vibration; outgoing gets the ringback.
+     Both stop the instant the status leaves 'ringing', which is the same effect
+     cleanup for answered, declined, missed and hung up alike.
+
+     `call` itself is deliberately *not* a dependency. It is a fresh object out
+     of the store on every `setCall`, so depending on it tore the ringtone down
+     and started it again on any unrelated update — restarting the cadence from
+     its first burst each time, which is heard as a stutter. Only the two fields
+     that decide what should be ringing belong here. */
   useEffect(() => {
-    if (!call) return undefined;
-    if (call.status === 'ringing') {
-      stopRinging.current = call.direction === 'incoming' ? sounds.ring() : sounds.dial();
-    }
+    if (callStatus !== 'ringing') return undefined;
+
+    stopRinging.current = direction === 'incoming' ? sounds.ring() : sounds.dial();
+
     return () => {
       stopRinging.current?.();
       stopRinging.current = null;
     };
-  }, [call?.status, call?.direction, call]);
+  }, [callStatus, direction]);
+
+  /* The fallback for a call arriving at a page nobody has touched.
+     Audio cannot start without a gesture, so on a cold tab the ringtone is
+     queued rather than playing (see `whenAudible` in lib/sound) — and a queued
+     ringtone alerts nobody. A notification can make noise where the page
+     cannot, so it stands in: the system rings, and tapping through both focuses
+     the call and unlocks audio, at which point the ringtone takes over. */
+  useEffect(() => {
+    if (callStatus !== 'ringing' || direction !== 'incoming') return undefined;
+    if (canPlayNow()) return undefined;
+
+    let notification = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+        const options = {
+          body: isVideo ? 'Incoming video call' : 'Incoming call',
+          icon: '/icon-192.png',
+          badge: '/icon-96.png',
+          tag: 'call-' + call.callId,
+          renotify: true,
+          // A call is the one alert that must not disappear on its own.
+          requireInteraction: true,
+          vibrate: [500, 240, 500, 240, 500],
+          data: { callId: call.callId },
+        };
+
+        const registration =
+          'serviceWorker' in navigator
+            ? await navigator.serviceWorker.getRegistration('/sw.js')
+            : null;
+
+        if (cancelled) return;
+
+        if (registration) {
+          await registration.showNotification(peerName, options);
+          notification = registration;
+        } else {
+          notification = new Notification(peerName, options);
+          notification.onclick = () => {
+            window.focus();
+            notification.close();
+          };
+        }
+      } catch {
+        /* The ring is the alert; this was only the backstop. */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      // Whichever path raised it, take it down the moment the call stops
+      // ringing — a call notification outliving its call is worse than none.
+      // Duck-typed rather than `instanceof ServiceWorkerRegistration`: that
+      // global does not exist on a browser without service workers, so the
+      // check would throw in the very cleanup meant to cope with one.
+      if (typeof notification?.getNotifications === 'function') {
+        notification
+          .getNotifications({ tag: 'call-' + call.callId })
+          .then((list) => list.forEach((n) => n.close()))
+          .catch(() => {});
+      } else {
+        notification?.close?.();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callStatus, direction, call?.callId]);
+
+  /* ── the head panel ──
+     The phone paints the strip above the call screen from the theme-color tag,
+     and a call that does not set it leaves the app's header colour banded
+     across the top of a full-screen dark call. Handing lib/theme the colour for
+     the current call state makes the two continuous, and the override is
+     dropped on unmount so the bar goes back to the theme's own colour. */
+  useEffect(() => {
+    if (!call) return undefined;
+    setStatusBarOverride(callTint(call, connection));
+    return () => setStatusBarOverride(null);
+  }, [call, connection]);
 
   /* ── duration ── */
   useEffect(() => {
@@ -180,15 +278,34 @@ export function CallOverlay() {
     return () => clearInterval(t);
   }, [connection]);
 
+  /**
+   * Answer.
+   *
+   * The ringtone is stopped here rather than left to the effect cleanup: the
+   * status change that triggers that cleanup is a render away, and half a
+   * second of ringing after you have already answered is the loudest possible
+   * way to feel unresponsive.
+   *
+   * `connected` is the sound and `callAccepted` the buzz — the one moment in a
+   * call you should be able to feel through a pocket without looking, since it
+   * is when you can start talking.
+   */
   function accept() {
-    feedback('select');
     stopRinging.current?.();
+    stopRinging.current = null;
+    sounds.connected();
+    haptics.callAccepted();
     emit('call:accept', { callId: call.callId });
     setCall({ ...call, status: 'active' });
   }
 
+  /** Refuse. The falling tone and its matching buzz, on both ends — the caller
+   *  gets the same pair when `call:declined` reaches them. */
   function decline() {
-    feedback('close');
+    stopRinging.current?.();
+    stopRinging.current = null;
+    sounds.declined();
+    haptics.callDeclined();
     emit('call:decline', { callId: call.callId });
     endCall();
   }
@@ -302,9 +419,26 @@ export function CallOverlay() {
             <motion.div
               aria-hidden
               initial={{ opacity: 0.1, scale: 0.9 }}
-              animate={{ opacity: [0.16, 0.34, 0.16], scale: [0.9, 1.06, 0.9] }}
-              transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute left-1/2 top-[38%] h-[460px] w-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/40 blur-[100px]"
+              animate={
+                // An incoming call breathes faster and brighter than one that
+                // is already up: while it is ringing, the screen is trying to
+                // get your attention, and afterwards it should get out of the
+                // way. Still opacity and transform only.
+                incoming
+                  ? { opacity: [0.24, 0.5, 0.24], scale: [0.92, 1.1, 0.92] }
+                  : { opacity: [0.16, 0.34, 0.16], scale: [0.9, 1.06, 0.9] }
+              }
+              transition={{
+                duration: incoming ? 2 : 7,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+              className={cn(
+                'absolute left-1/2 top-[38%] h-[460px] w-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[100px]',
+                // The same state colour the status bar is painted with, so the
+                // screen and the strip above it are one surface.
+                BLOOM[callState(call, connection)]
+              )}
             />
           )}
         </div>
@@ -513,6 +647,37 @@ export function CallOverlay() {
     document.body
   );
 }
+
+/* ─────────────────────────── the call's colour ───────────────────────────
+ *
+ * One function decides what state a call is in, and both the screen's bloom and
+ * the phone's status bar are coloured from it. That is the whole point of
+ * routing them through the same place: the strip the phone draws above the call
+ * has to be the same colour the call is, and two independent opinions about
+ * "what colour is a ringing call" drift apart the first time either changes.
+ */
+function callState(call, connection) {
+  if (!call) return 'outgoing';
+  if (call.status === 'ringing') {
+    return call.direction === 'incoming' ? 'incoming' : 'outgoing';
+  }
+  if (connection === CALL_STATES.failed) return 'failed';
+  if (connection === CALL_STATES.reconnecting) return 'reconnecting';
+  if (connection === CALL_STATES.connected) return 'connected';
+  return 'outgoing';
+}
+
+/** The colour for the head panel, in the state the call is currently in. */
+const callTint = (call, connection) => CALL_STATUS_BAR[callState(call, connection)];
+
+/** The on-screen bloom for each of those states. */
+const BLOOM = {
+  incoming: 'bg-brand/55',
+  outgoing: 'bg-brand/40',
+  connected: 'bg-brand/40',
+  reconnecting: 'bg-warn/45',
+  failed: 'bg-danger/40',
+};
 
 /* ────────────────────────────── pieces ────────────────────────────── */
 

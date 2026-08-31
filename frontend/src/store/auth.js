@@ -7,7 +7,7 @@ import { vault } from '@/lib/vault';
 import * as e2ee from '@/lib/e2ee';
 import * as passkeys from '@/lib/passkeys';
 import * as C from '@/lib/crypto';
-import { setSoundEnabled, setHapticsEnabled } from '@/lib/sound';
+import { setSoundEnabled, setHapticsEnabled, setRingEnabled } from '@/lib/sound';
 import { applyFontScale } from '@/lib/theme';
 import { toast } from '@/store/ui';
 
@@ -331,6 +331,11 @@ function applyPreferences(user) {
   if (!user?.settings) return;
   setSoundEnabled(user.settings.sounds !== false);
   setHapticsEnabled(user.settings.haptics !== false);
+  /* Ringing follows the Calls notification toggle, not the in-app sound one:
+     that switch offers "Send, receive, and reaction tones", and a messenger
+     whose calls stop ringing because you turned off the tap sounds is broken.
+     Turning off Calls notifications is the deliberate way to silence them. */
+  setRingEnabled(user.settings.notifications?.calls !== false);
 
   if (typeof document !== 'undefined') {
     document.documentElement.classList.toggle('reduce-motion', !!user.settings.reduceMotion);

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "test:motion": "node scripts/flipgesture.test.mjs && node scripts/tiltreveal.test.mjs && node scripts/shakegesture.test.mjs",
     "test:scam": "node scripts/scamguard.test.mjs",
-    "test": "npm run test:motion && npm run test:scam && npm run test:capture",
+    "test": "npm run test:motion && npm run test:scam && npm run test:capture && npm run test:calls",
+    "test:calls": "node scripts/ringtone.test.mjs && node scripts/statusbar.test.mjs",
     "test:capture": "node scripts/captureguard.test.mjs"
   },
   "dependencies": {

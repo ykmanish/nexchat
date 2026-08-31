@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Bell,
   BellRing,
@@ -37,6 +37,8 @@ export default function NotificationsPage() {
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [server, setServer] = useState(null);
+  const [ringing, setRinging] = useState(false);
+  const stopRing = useRef(null);
 
   const notifications = user?.settings?.notifications || {};
   const supported = pushSupported();
@@ -96,6 +98,29 @@ export default function NotificationsPage() {
       setTesting(false);
     }
   }
+
+  /* Plays one pass of the real ringtone and stops it again. The full cadence
+     runs for the same 45 seconds a real call rings for, so this has to be
+     stoppable — a preview you cannot switch off is a prank. */
+  function previewRingtone() {
+    if (stopRing.current) {
+      stopRing.current();
+      stopRing.current = null;
+      setRinging(false);
+      return;
+    }
+    stopRing.current = sounds.ring();
+    setRinging(true);
+  }
+
+  /* Leaving this page mid-preview must not leave the phone ringing. */
+  useEffect(
+    () => () => {
+      stopRing.current?.();
+      stopRing.current = null;
+    },
+    []
+  );
 
   const rows = [
     { key: 'messages', icon: MessageSquare, label: 'Direct messages' },
@@ -262,6 +287,21 @@ export default function NotificationsPage() {
           >
             <Bell size={16} />
             Preview the message tone
+          </button>
+        </SettingsRow>
+        <Divider />
+        {/* Separate from the message tone, because it is a separate thing: the
+            ringtone is loud, it vibrates, and it follows the Calls switch above
+            rather than "Play sounds in the app". Hearing it once here is the
+            only way to know that before somebody actually calls. */}
+        <SettingsRow>
+          <button
+            type="button"
+            onClick={previewRingtone}
+            className="flex items-center gap-2 text-[14.5px] font-medium text-brand-strong"
+          >
+            <Phone size={16} />
+            {ringing ? 'Stop the ringtone' : 'Preview the ringtone'}
           </button>
         </SettingsRow>
       </SettingsGroup>

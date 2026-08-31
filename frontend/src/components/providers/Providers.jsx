@@ -11,7 +11,7 @@ import { getSocket, connectSocket } from '@/lib/socket';
 import { unlockAudio, feedback } from '@/lib/sound';
 import { effectFor } from '@/lib/messageeffects';
 import { ToastStack } from '@/components/ui/Toast';
-import { applyBubbleTheme, applyFontScale, STATUS_BAR } from '@/lib/theme';
+import { applyBubbleTheme, applyFontScale, setStatusBarBase } from '@/lib/theme';
 import { vault } from '@/lib/vault';
 
 export function Providers({ children }) {
@@ -38,31 +38,11 @@ function AppearanceBridge() {
   }, [settings?.bubbleColor, resolvedTheme]);
 
   /* Keep the mobile status/URL bar in step with the app's theme.
-     The value is read back off `--header` rather than hardcoded, so it stays
-     correct if the palette changes. */
+     This only sets the *base* colour. The tags themselves are owned by
+     lib/theme, because a call overrides them to match the call screen and two
+     independent writers would fight over the same tag. */
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-
-    const color = STATUS_BAR[resolvedTheme === 'dark' ? 'dark' : 'light'];
-
-    let meta = document.querySelector('meta[name="theme-color"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'theme-color');
-      document.head.appendChild(meta);
-    }
-    meta.setAttribute('content', color);
-
-    // iOS standalone reads this one instead; `black-translucent` would let
-    // content slide under the notch, so each theme gets the opaque style
-    // that actually exists.
-    let status = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-    if (!status) {
-      status = document.createElement('meta');
-      status.setAttribute('name', 'apple-mobile-web-app-status-bar-style');
-      document.head.appendChild(status);
-    }
-    status.setAttribute('content', resolvedTheme === 'dark' ? 'black' : 'default');
+    setStatusBarBase(resolvedTheme === 'dark');
   }, [resolvedTheme]);
 
   useEffect(() => {
@@ -423,19 +403,52 @@ function SocketBridge() {
         useUI.getState().toast((by?.name || 'Someone') + ' followed you', { type: 'info' });
       },
 
+      /* The overlay owns the ringtone itself — it is the thing that knows when
+         the call stops ringing, and starting a 45-second cadence from here
+         would leave nobody holding the stop function. */
       'call:incoming': (payload) => {
         useUI.getState().setCall({ ...payload, direction: 'incoming', status: 'ringing' });
       },
-      'call:accepted': ({ callId }) => {
+
+      /* The other end picked up. This is the caller's side of "accepted", so
+         it gets the same buzz and rise the person answering feels — otherwise
+         the moment a call actually connects is the one moment in it with no
+         feedback at all.
+
+         Skipped for whoever did the accepting. The server broadcasts this to
+         the whole conversation, which includes the device that just tapped
+         Accept, and that device has already played the sound and the buzz
+         locally — without this check it felt the answer twice. */
+      'call:accepted': ({ callId, userId: acceptedBy }) => {
         const call = useUI.getState().call;
-        if (call?.callId === callId) useUI.getState().setCall({ ...call, status: 'active' });
+        if (call?.callId !== callId) return;
+        useUI.getState().setCall({ ...call, status: 'active' });
+        if (String(acceptedBy) !== String(me()._id)) feedback('connected');
       },
-      'call:declined': () => {
+
+      /* Declined. This used to be a silent toast: you sat listening to the
+         ringback, it stopped, and the screen went away. It now sounds like a
+         refusal and feels like one. */
+      'call:declined': ({ callId } = {}) => {
+        const call = useUI.getState().call;
+        if (!call || (callId && call.callId !== callId)) return;
         useUI.getState().toast('Call declined', { type: 'info' });
+        feedback('declined');
         useUI.getState().endCall();
       },
-      'call:ended': () => {
-        feedback('close');
+
+      /* Ended, by either side or by the 45-second timeout.
+         Guarded on there actually being a live call with this id, which does
+         three jobs at once: the server addresses this event to the conversation
+         room *and* the call room, so a participant sitting in both used to hear
+         the hang-up twice; the device that pressed End has already played the
+         tone locally and cleared the call, so it no longer plays it again; and a
+         call between two other members of a group no longer makes a noise on
+         everybody else's phone. */
+      'call:ended': ({ callId, reason } = {}) => {
+        const call = useUI.getState().call;
+        if (!call || (callId && call.callId !== callId)) return;
+        feedback(reason === 'missed' ? 'declined' : 'hangup');
         useUI.getState().endCall();
       },
     };
