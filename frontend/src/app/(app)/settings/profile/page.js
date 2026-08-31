@@ -7,6 +7,7 @@ import { SettingsShell, SettingsGroup, SettingsRow, Divider } from '@/components
 import { Input, Textarea } from '@/components/ui/Field';
 import { Button, ListButton } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
+import { AvatarCropSheet } from '@/components/modals/AvatarCropSheet';
 import { useAuth } from '@/store/auth';
 import { toast } from '@/store/ui';
 import { api } from '@/lib/api';
@@ -23,6 +24,7 @@ export default function ProfileSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [usernameState, setUsernameState] = useState(null);
+  const [cropping, setCropping] = useState(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -70,20 +72,26 @@ export default function ProfileSettingsPage() {
     }
   }
 
-  async function pickAvatar(e) {
+  /* Picking a file no longer uploads it. It opens the cropper, and what gets
+     uploaded is the square that comes back — so the person in the photograph
+     decides which part of it is the avatar, rather than the server guessing. */
+  function pickAvatar(e) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    e.target.value = '';
+    if (file) setCropping(file);
+  }
 
+  async function saveCropped(cropped) {
     setUploading(true);
     try {
-      await uploadAvatar(file);
+      await uploadAvatar(cropped);
       feedback('success');
       toast.success('Photo updated');
     } catch (err) {
       toast.error(err.message);
+      throw err;
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   }
 
@@ -132,6 +140,13 @@ export default function ProfileSettingsPage() {
 
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickAvatar} />
       </div>
+
+      <AvatarCropSheet
+        open={!!cropping}
+        file={cropping}
+        onClose={() => setCropping(null)}
+        onCropped={saveCropped}
+      />
 
       <SettingsGroup footer="Your name and photo are visible to people you chat with.">
         <SettingsRow>
