@@ -234,6 +234,9 @@ export async function createMessage({ user, deviceId, payload }) {
     if (threadRoot) return;
     p.unreadCount += 1;
     if (p.archived) p.archived = false; // a new message un-archives the chat
+    // …and un-deletes it. Deleting a chat hides it until there is something new
+    // in it; this is the something new.
+    if (p.deletedAt) p.deletedAt = null;
   });
   await conv.save();
 

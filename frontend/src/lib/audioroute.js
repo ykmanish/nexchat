@@ -32,9 +32,18 @@
  * granted, which is why routing is only ever set up once a call has its stream.
  */
 
-/** What we can tell about each output from its label. */
-const EARPIECE = /earpiece|receiver|handset|headset|internal speaker \(built-in\)/i;
-const SPEAKER = /speaker(phone)?|loudspeaker|external/i;
+/**
+ * What we can tell about each output from its label.
+ *
+ * `internal speaker (built-in)` used to be in the earpiece pattern, which was
+ * simply wrong: a Mac's internal speakers are the loudspeaker, and putting them
+ * in the earpiece slot meant the toggle's two positions could be the same
+ * device. Headphones are their own thing and belong in neither — a call should
+ * not be moved off them by either position of a speakerphone button.
+ */
+const EARPIECE = /earpiece|receiver|handset/i;
+const SPEAKER = /speaker(phone)?|loudspeaker/i;
+const HEADSET = /headphone|headset|earbud|airpod|bluetooth/i;
 
 let cached = null; // { earpiece, speaker, all } — device ids
 let invalidatorAttached = false;
@@ -86,7 +95,7 @@ export async function outputs({ refresh = false } = {}) {
   attachInvalidator();
   if (cached && !refresh) return cached;
   if (!supported()) {
-    cached = { earpiece: null, speaker: null, all: [] };
+    cached = { primary: null, secondary: null, named: false, all: [] };
     return cached;
   }
 
@@ -99,16 +108,54 @@ export async function outputs({ refresh = false } = {}) {
        and changes nothing. */
     const real = all.filter((d) => d.deviceId !== 'default' && d.deviceId !== 'communications');
 
-    const find = (re) => real.find((d) => re.test(d.label || ''))?.deviceId || null;
+    const find = (re) => real.find((d) => re.test(d.label || '')) || null;
+
+    const earpiece = find(EARPIECE);
+    const speaker = find(SPEAKER);
+
+    /**
+     * The two positions of the toggle, which is not always earpiece/speaker.
+     *
+     * A phone that names both is the easy case. A desktop names neither — its
+     * outputs are "Speakers (Realtek)", "Dell U2720Q", "Headphones" — and
+     * requiring the words "earpiece" and "speakerphone" meant the button was
+     * dead on every desktop in the world, which is not "your device decides", it
+     * is this code failing to look. So when the pair cannot be named, any two
+     * distinct outputs will do: the toggle then moves the call between them and
+     * the hint says which one it is on.
+     *
+     * Headphones are excluded from the fallback pair. Moving a call off the
+     * headphones somebody has just plugged in, because they pressed a button
+     * labelled Speaker, would be a worse answer than doing nothing.
+     */
+    let primary = earpiece;
+    let secondary = speaker;
+
+    if (!primary || !secondary || primary.deviceId === secondary.deviceId) {
+      const plain = real.filter((d) => !HEADSET.test(d.label || ''));
+      const speakerish = plain.find((d) => SPEAKER.test(d.label || ''));
+      const other = plain.find((d) => d.deviceId !== speakerish?.deviceId);
+      primary = other || plain[0] || null;
+      secondary =
+        speakerish && speakerish.deviceId !== primary?.deviceId ? speakerish : plain[1] || null;
+    }
 
     cached = {
-      earpiece: find(EARPIECE),
-      speaker: find(SPEAKER),
+      /* `primary` and `secondary`, not `earpiece` and `speaker`: on a phone they
+         are exactly that, and on a desktop they are just two outputs. Naming
+         them for the phone case would make every desktop read as a lie. */
+      primary: primary?.deviceId || null,
+      primaryLabel: primary?.label || null,
+      secondary: secondary?.deviceId || null,
+      secondaryLabel: secondary?.label || null,
+      /* Whether the two positions really are an earpiece and a speaker, or just
+         two outputs. The call screen words its hint from this. */
+      named: !!(earpiece && speaker && earpiece.deviceId !== speaker.deviceId),
       all: real.map((d) => ({ id: d.deviceId, label: d.label })),
     };
     return cached;
   } catch {
-    cached = { earpiece: null, speaker: null, all: [] };
+    cached = { primary: null, secondary: null, named: false, all: [] };
     return cached;
   }
 }
@@ -139,7 +186,7 @@ export async function routeTo(el, want) {
   if (!el || !supported()) return null;
 
   const found = await outputs();
-  const target = want === 'speaker' ? found.speaker : found.earpiece;
+  const target = want === 'speaker' ? found.secondary : found.primary;
 
   /* An explicit id is the only thing worth setting. Falling back to '' (the
      system default) would report success while leaving the sound exactly where
@@ -165,5 +212,22 @@ export async function routeTo(el, want) {
 export async function canSwitch() {
   if (!supported()) return false;
   const found = await outputs();
-  return !!found.earpiece && !!found.speaker;
+  return !!found.primary && !!found.secondary && found.primary !== found.secondary;
+}
+
+/**
+ * How to describe the two positions to the person pressing the button.
+ *
+ * `named` is the difference between a phone, where "speaker" means the
+ * loudspeaker instead of the earpiece, and a desktop, where it only means a
+ * different output — and saying "earpiece" about a monitor's speakers would be
+ * nonsense.
+ */
+export async function describe() {
+  const found = await outputs();
+  return {
+    named: !!found.named,
+    earpiece: found.primaryLabel || 'the earpiece',
+    speaker: found.secondaryLabel || 'the speaker',
+  };
 }

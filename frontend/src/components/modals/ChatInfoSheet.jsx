@@ -90,7 +90,9 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
 
   if (!conversation) return null;
 
-  const members = (conversation.participants || []).filter((p) => !p.leftAt);
+  // `p.user` too — a hard-deleted account leaves a participant with no user,
+  // and the rows below read `p.user._id`. See GroupMembersSheet.
+  const members = (conversation.participants || []).filter((p) => !p.leftAt && p.user);
 
   async function setSecret(patch) {
     try {

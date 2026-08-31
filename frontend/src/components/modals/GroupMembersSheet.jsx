@@ -42,8 +42,14 @@ export function GroupMembersSheet({ open, onClose, conversation: initial }) {
   const menuAnchor = useRef(null);
 
   const isAdmin = conversation?.isAdmin;
+  /* `p.user` as well as `leftAt`: a hard-deleted account leaves a participant
+     row whose user is null, and every line below reads `p.user._id`. Dropping it
+     here is what stops this sheet throwing during render — which took the whole
+     app down, because SheetHost hands the conversation to every sheet, so
+     merely opening the chat menu rendered this one. The server filters these out
+     too; this is the belt for a conversation restored from the local cache. */
   const members = useMemo(
-    () => (conversation?.participants || []).filter((p) => !p.leftAt),
+    () => (conversation?.participants || []).filter((p) => !p.leftAt && p.user),
     [conversation]
   );
 

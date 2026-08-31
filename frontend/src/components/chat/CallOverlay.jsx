@@ -73,6 +73,10 @@ export function CallOverlay() {
      between a working toggle and one that has to admit it cannot help. */
   const [speaker, setSpeaker] = useState(false);
   const [canRoute, setCanRoute] = useState(false);
+  /* What the two positions actually are on this device. `named` is false on a
+     desktop, where they are two outputs rather than an earpiece and a speaker,
+     and calling them the wrong thing in the hint would be worse than vague. */
+  const [outputs, setOutputs] = useState({ named: false, earpiece: '', speaker: '' });
   const [quality, setQuality] = useState(null);
   const [showMore, setShowMore] = useState(false);
 
@@ -205,15 +209,36 @@ export function CallOverlay() {
     return () => clearInterval(t);
   }, [connection]);
 
+  /**
+   * Stop capturing the screen, whatever the reason.
+   *
+   * A display capture is not part of the call's own media, so nothing in the
+   * engine's teardown reaches it: `close()` stops the tracks it finds on the
+   * senders, and once the camera track has been put back the screen track is
+   * not on one. The result was a call that ended while the browser went on
+   * saying "Chax is sharing your screen" — and went on actually capturing it —
+   * until the tab was closed. That is the one leak in here that is a privacy
+   * problem rather than an untidiness, so it is a single function called from
+   * every path that ends a call.
+   */
+  const stopSharing = useCallback(() => {
+    screenStream.current?.getTracks().forEach((t) => t.stop());
+    screenStream.current = null;
+    cameraTrack.current = null;
+    setSharing(false);
+    setPeerSharing(false);
+  }, []);
+
   const hangUp = useCallback(() => {
     if (call) emit('call:end', { callId: call.callId });
     sounds.hangup();
+    stopSharing();
     engine.current?.close();
     engine.current = null;
     setSeconds(0);
     setRemoteStream(null);
     endCall();
-  }, [call, endCall]);
+  }, [call, endCall, stopSharing]);
 
   /* ── the call itself ── */
   useEffect(() => {
@@ -249,6 +274,10 @@ export function CallOverlay() {
     return () => {
       handle.close();
       if (engine.current === handle) engine.current = null;
+      /* Covers the paths `hangUp` does not: the other person ending the call,
+         the call failing, a reload of the overlay. Whatever stops the call stops
+         the capture. */
+      stopSharing();
       setLocalStream(null);
       setRemoteVideoLive(false);
       setPeerVideoOff(false);
@@ -350,11 +379,14 @@ export function CallOverlay() {
     let cancelled = false;
 
     const apply = async () => {
-      const switchable = await route.canSwitch();
+      const [switchable, shown] = await Promise.all([route.canSwitch(), route.describe()]);
       if (cancelled) return;
       setCanRoute(switchable);
-      if (!switchable) return;
+      setOutputs(shown);
 
+      /* Routed even when it cannot be switched: with one output there is
+         nowhere else to go, but pointing the element at it explicitly is still
+         better than leaving it on whatever the browser picked. */
       const got = await route.routeTo(remoteAudio.current, speaker ? 'speaker' : 'earpiece');
       if (!cancelled && got) setSpeaker(got === 'speaker');
     };
@@ -380,10 +412,13 @@ export function CallOverlay() {
    */
   async function toggleSpeaker() {
     if (!canRoute) {
+      /* Said once, specifically, and naming the platform rather than blaming
+         "your device" — because on Android and iOS this is a browser limit with
+         a name, and on anything else it means there is only one output. */
       toast.info(
         route.supported()
-          ? 'This device does not let a browser choose the earpiece or the speaker.'
-          : 'This browser cannot switch audio output — your phone decides.'
+          ? 'There is only one audio output on this device, so there is nothing to switch to.'
+          : 'Browsers on this platform will not let a web page choose the earpiece or the speaker — only the Chax app can.'
       );
       return;
     }
@@ -392,9 +427,10 @@ export function CallOverlay() {
     const got = await route.routeTo(remoteAudio.current, want);
     if (got) {
       setSpeaker(got === 'speaker');
+      haptics.selection();
     } else {
       setCanRoute(false);
-      toast.error('Could not move the audio to the ' + want + '.');
+      toast.error('Could not move the audio to ' + (want === 'speaker' ? outputs.speaker : outputs.earpiece) + '.');
     }
   }
 
@@ -751,10 +787,11 @@ export function CallOverlay() {
                         unavailable={!canRoute}
                         hint={
                           canRoute
-                            ? speaker
-                              ? 'On speaker — tap for the earpiece'
-                              : 'On the earpiece — tap for speaker'
-                            : 'This device chooses its own output'
+                            ? 'On ' +
+                              (speaker ? outputs.speaker : outputs.earpiece) +
+                              ' — tap for ' +
+                              (speaker ? outputs.earpiece : outputs.speaker)
+                            : 'Audio output cannot be changed on this device'
                         }
                         onClick={toggleSpeaker}
                       />

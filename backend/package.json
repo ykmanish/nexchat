@@ -20,7 +20,8 @@
     "test:push": "node scripts/pushdelivery.test.mjs",
     "test:presence": "node scripts/presence.test.mjs",
     "test:turn": "node scripts/turn.test.mjs",
-    "test": "npm run test:forensics && npm run test:contacts && npm run test:feed && npm run test:secret && npm run test:presence && npm run test:turn && npm run test:push"
+    "test": "npm run test:forensics && npm run test:contacts && npm run test:feed && npm run test:secret && npm run test:presence && npm run test:turn && npm run test:push && npm run test:conversations",
+    "test:conversations": "node scripts/conversations.test.mjs"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

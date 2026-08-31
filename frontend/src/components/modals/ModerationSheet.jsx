@@ -93,8 +93,9 @@ export function ModerationSheet({ open, onClose, conversation }) {
     }
   }
 
+  // As elsewhere: no user, no member. The rows below read `p.user._id`.
   const members = (conversation?.participants || []).filter(
-    (p) => !p.leftAt && p.role === 'member'
+    (p) => !p.leftAt && p.user && p.role === 'member'
   );
 
   return (

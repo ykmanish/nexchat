@@ -206,7 +206,14 @@ export function ActionSheet({ open, onClose, title, actions = [], cancelLabel = 
               {title}
             </div>
           )}
-          {actions.map((action, i) => (
+          {/* `hidden` was accepted by every call site and honoured by none, so a
+              direct chat offered "Only notify for @mentions" — a setting whose
+              own comment explains why it makes no sense there. Filtered before
+              the index is taken, so the dividers and the stagger still line
+              up. */}
+          {actions
+            .filter((action) => action && !action.hidden)
+            .map((action, i) => (
             <motion.button
               key={action.label}
               type="button"

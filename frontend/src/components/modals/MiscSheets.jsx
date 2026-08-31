@@ -169,8 +169,13 @@ export function MessageInfoSheet({ open, onClose, message, conversation }) {
   const isDirect = conversation?.type === 'direct';
   const receipts = message.receipts || [];
 
+  // `p.user &&` leads, because the comparison right after it dereferences it
+  // and a hard-deleted account leaves a participant with none.
   const members = (conversation?.participants || []).filter(
-    (p) => !p.leftAt && String(p.user._id || p.user) !== String(message.sender?._id || message.sender)
+    (p) =>
+      !p.leftAt &&
+      p.user &&
+      String(p.user._id || p.user) !== String(message.sender?._id || message.sender)
   );
 
   const byUser = new Map(receipts.map((r) => [String(r.user), r]));

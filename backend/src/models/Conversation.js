@@ -24,6 +24,20 @@ const participantSchema = new mongoose.Schema(
     lastReadAt: { type: Date, default: null },
     lastReadMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     clearedAt: { type: Date, default: null },
+    /**
+     * When this person deleted the chat, or null.
+     *
+     * Distinct from `clearedAt`, which only hides the sidebar preview. A deleted
+     * direct chat has to vanish from the list entirely and come back when
+     * something new happens — and that could not be expressed by comparing
+     * `clearedAt` against `lastMessageAt`, because a conversation is created
+     * with `lastMessageAt` already set to now, so reopening a deleted chat would
+     * have left it hidden while you were sitting in it.
+     *
+     * Set by `deleteConversation`, and cleared in exactly two places: a new
+     * message arriving, and the chat being deliberately reopened.
+     */
+    deletedAt: { type: Date, default: null },
     draft: { type: String, default: '' },
     leftAt: { type: Date, default: null },
     wallpaper: { type: String, default: null },

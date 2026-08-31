@@ -57,6 +57,24 @@ export function serialize(conv, userId, viewer = null) {
   const seenBy = viewer || { _id: userId, contacts: [] };
   const peer = doc.type === 'direct' ? visibleUser(others[0]?.user, seenBy) : null;
 
+  /**
+   * Participants whose account no longer exists are not participants.
+   *
+   * `populate` yields `null` for a reference to a document that has been hard
+   * deleted, and the client's member lists then map straight over it —
+   * `p.user._id` on a null — which threw during render and took the whole app
+   * down with a client-side exception. Filtering here rather than guarding in
+   * each of the five places that render a member list is both the smaller fix
+   * and the more truthful one: a deleted account is not somebody in the chat, so
+   * it should not be in the list, and `memberCount` should not count it.
+   *
+   * The reference is left in the database. Rewriting history to tidy a render
+   * bug would be the wrong trade.
+   */
+  const presentParticipants = (doc.participants || []).filter(
+    (p) => p.user && (typeof p.user !== 'object' || p.user._id)
+  );
+
   /* `lastMessage` is one field shared by everyone in the chat, but clearing is
      per-person — so it cannot simply be nulled. Hiding it for whoever cleared
      past it is what stops a cleared chat still showing its last line in the
@@ -74,13 +92,13 @@ export function serialize(conv, userId, viewer = null) {
     avatarColor: doc.type === 'direct' ? peer?.avatarColor || '#F4C430' : doc.avatarColor,
     about: doc.type === 'direct' ? peer?.about || '' : doc.about,
     peer: peer || null,
-    participants: (doc.participants || []).map((p) => ({
+    participants: presentParticipants.map((p) => ({
       user: visibleUser(p.user, seenBy),
       role: p.role,
       joinedAt: p.joinedAt,
       leftAt: p.leftAt,
     })),
-    memberCount: (doc.participants || []).filter((p) => !p.leftAt).length,
+    memberCount: presentParticipants.filter((p) => !p.leftAt).length,
     createdBy: doc.createdBy,
     parentCommunity: doc.parentCommunity,
     isAnnouncement: doc.isAnnouncement,
@@ -92,6 +110,10 @@ export function serialize(conv, userId, viewer = null) {
     settings: doc.settings,
     secret: doc.secret,
     bannedCount: (doc.bans || []).length,
+
+    /* Whether *this* person has deleted the chat. Read by `listConversations`
+       to keep it out of the list until there is something new in it. */
+    deletedForMe: !!me?.deletedAt,
 
     /* First-contact signal, where most scams begin. Free: `lastSentAt` is
        already on the participant record for slow mode, so "they messaged me and
@@ -195,6 +217,23 @@ export const listConversations = asyncHandler(async (req, res) => {
 
   let out = convs.map((c) => serialize(c, req.user._id, req.user));
 
+  /**
+   * Two kinds of chat that should not be in the list.
+   *
+   * A chat you deleted, until something new happens in it — `deletedAt` says so,
+   * and it is cleared by an incoming message or by deliberately reopening the
+   * chat. Deleting used to leave the row exactly where it was, because nothing
+   * in this query knew the difference.
+   *
+   * And a direct chat with nobody on the other end. When an account is hard
+   * deleted its conversations are left pointing at an id that no longer
+   * resolves, and those rows showed up as "Unknown" with a gold avatar, could
+   * not be got rid of, and crashed the app when you opened their menu. There is
+   * nobody there to talk to, so there is nothing to show.
+   */
+  out = out.filter((c) => !c.deletedForMe);
+  out = out.filter((c) => c.type !== 'direct' || !!c.peer);
+
   const wantArchived = String(archived) === 'true';
   out = out.filter((c) => c.archived === wantArchived);
 
@@ -232,6 +271,17 @@ export const createDirect = asyncHandler(async (req, res) => {
   })
     .populate('participants.user', POPULATE_USER)
     .populate('lastMessage');
+
+  /* Asking for this chat again is the other way a deleted one comes back.
+     Without this, tapping the person after deleting the chat opened a thread
+     that was still hidden from the list you had just come from. */
+  if (conv) {
+    const mine = conv.participantOf(req.user._id);
+    if (mine?.deletedAt) {
+      mine.deletedAt = null;
+      await conv.save();
+    }
+  }
 
   if (!conv) {
     conv = await Conversation.create({
@@ -709,6 +759,12 @@ export const deleteConversation = asyncHandler(async (req, res) => {
   const me = conv.participantOf(req.user._id);
 
   me.clearedAt = new Date();
+  /* A direct chat is not left, because there is no group to leave and the other
+     person can still write to you — but it does have to disappear from your
+     list, which is what `deletedAt` says and what `listConversations` reads.
+     Before this it stayed exactly where it was, so deleting a chat appeared to
+     do nothing at all as soon as the list reloaded. */
+  me.deletedAt = new Date();
   me.leftAt = conv.type === 'direct' ? me.leftAt : new Date();
   me.archived = false;
   me.unreadCount = 0;

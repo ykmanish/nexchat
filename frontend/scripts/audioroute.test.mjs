@@ -139,8 +139,8 @@ await check("Chrome's own aliases are not mistaken for hardware", async () => {
   ]);
 
   const found = await route.outputs();
-  assert(!found.earpiece, 'an alias was taken for an earpiece: ' + found.earpiece);
-  assert(!found.speaker, 'an alias was taken for a speaker: ' + found.speaker);
+  assert(!found.primary, 'an alias was taken for real hardware: ' + found.primary);
+  assert(!found.secondary, 'an alias was taken for real hardware: ' + found.secondary);
   assert((await route.canSwitch()) === false, 'claimed to be switchable with no real outputs');
 
   const el = makeElement();
@@ -159,11 +159,67 @@ await check('one output alone is not a toggle', async () => {
 
   assert((await route.canSwitch()) === false, 'a single output was offered as a toggle');
 
-  // The one it does have is still reachable — it just cannot be switched away
-  // from, which is a different statement.
+  /* The one output there is becomes the resting position, so a call is still
+     routed somewhere explicit — there is simply nowhere to switch *to*. */
   const el = makeElement();
-  assert((await route.routeTo(el, 'speaker')) === 'speaker', 'could not reach the only output');
-  assert((await route.routeTo(el, 'earpiece')) === null, 'invented an earpiece');
+  assert((await route.routeTo(el, 'earpiece')) === 'earpiece', 'could not reach the only output');
+  assert(el.sinkId === 'spk-1', 'routed to ' + el.sinkId);
+  assert((await route.routeTo(el, 'speaker')) === null, 'invented a second output');
+});
+
+await check('two plain outputs still make a toggle, earpiece or not', async () => {
+  /* A desktop: no device is called an earpiece, and requiring the word meant
+     the button was dead on every desktop rather than switching between the two
+     outputs the machine actually has. */
+  reset([
+    { kind: 'audiooutput', deviceId: 'realtek', label: 'Speakers (Realtek Audio)' },
+    { kind: 'audiooutput', deviceId: 'monitor', label: 'Dell U2720Q' },
+  ]);
+
+  assert((await route.canSwitch()) === true, 'two real outputs were not offered as a toggle');
+
+  const shown = await route.describe();
+  assert(shown.named === false, 'claimed these are an earpiece and a speaker');
+
+  const el = makeElement();
+  await route.routeTo(el, 'earpiece');
+  const first = el.sinkId;
+  await route.routeTo(el, 'speaker');
+  assert(el.sinkId !== first, 'both positions of the toggle are the same device');
+});
+
+await check('a Mac’s internal speakers are not an earpiece', async () => {
+  /* This was a real mistake in the pattern: `internal speaker (built-in)` was
+     listed as an earpiece, so on a Mac both positions of the toggle resolved to
+     the same device and pressing it changed nothing. */
+  reset([
+    { kind: 'audiooutput', deviceId: 'int', label: 'Internal Speaker (Built-in)' },
+    { kind: 'audiooutput', deviceId: 'ext', label: 'External Headphones' },
+  ]);
+
+  const found = await route.outputs();
+  const shown = await route.describe();
+  assert(shown.named === false, 'internal speakers were taken for an earpiece');
+  assert(
+    found.primary !== found.secondary || !found.secondary,
+    'both positions resolved to the same device'
+  );
+});
+
+await check('headphones are not dragged into the toggle', async () => {
+  reset([
+    { kind: 'audiooutput', deviceId: 'hp-1', label: 'Headphones' },
+    { kind: 'audiooutput', deviceId: 'ear-1', label: 'Earpiece' },
+    { kind: 'audiooutput', deviceId: 'spk-1', label: 'Speakerphone' },
+  ]);
+
+  const found = await route.outputs();
+  assert(found.primary === 'ear-1', 'the earpiece is not the resting position');
+  assert(found.secondary === 'spk-1', 'the speaker is not the other position');
+  assert(
+    found.primary !== 'hp-1' && found.secondary !== 'hp-1',
+    'a speakerphone button would have moved the call off the headphones'
+  );
 });
 
 await check('a browser without setSinkId says so rather than failing quietly', async () => {
@@ -217,11 +273,13 @@ await check('plugging in headphones re-reads the devices', async () => {
   assert(told, 'nothing was told the devices had changed');
 
   const found = await route.outputs();
-  assert(found.earpiece === null, 'still offering an earpiece that is no longer there');
   assert(
     found.all.some((d) => d.id === 'hp-1'),
     'the new device was not picked up'
   );
+  /* Headphones plus one speaker is one switchable output, so the toggle goes
+     away rather than offering to move the call off the headphones. */
+  assert((await route.canSwitch()) === false, 'still offering a toggle it cannot honour');
 });
 
 await check('unwatching actually stops the callbacks', async () => {
