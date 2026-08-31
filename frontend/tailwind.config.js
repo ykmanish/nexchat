@@ -21,6 +21,10 @@ module.exports = {
           3: 'var(--surface-3)',
           raised: 'var(--raised)',
         },
+        /* The bar at the top of a screen. It is the same value the status-bar
+           meta tag is painted with, so on a phone the system strip and the
+           app's own header read as one continuous panel. */
+        header: 'var(--header)',
         line: {
           DEFAULT: 'var(--border)',
           strong: 'var(--border-strong)',

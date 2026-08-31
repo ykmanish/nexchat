@@ -46,7 +46,10 @@ export default function FeedPage() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-app">
       {/* ── header ── */}
-      <header className="safe-top z-20 shrink-0 border-b border-line bg-header">
+      {/* No bottom border, and the same token the status bar is painted
+          from — so on a phone the system strip and the app header read as
+          one panel instead of two tones with a line between them. */}
+      <header className="safe-top z-20 shrink-0 bg-header">
         <div className="mx-auto flex h-[54px] w-full max-w-[600px] items-center gap-2 px-4 xl:max-w-[952px]">
           <button
             type="button"

@@ -74,7 +74,7 @@ export default function ExplorePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-app">
-      <header className="safe-top z-20 shrink-0 border-b border-line bg-header">
+      <header className="safe-top z-20 shrink-0 bg-header">
         <div className="mx-auto flex h-[54px] w-full max-w-[935px] items-center gap-2 px-2 sm:px-4">
           <IconButton
             icon={ArrowLeft}

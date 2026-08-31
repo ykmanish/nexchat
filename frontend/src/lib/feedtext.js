@@ -79,3 +79,9 @@ export function feedTimeLong(date) {
     minute: '2-digit',
   });
 }
+
+/** The first real URL in a caption, or null. Feeds the preview card. */
+export function firstLink(text = '') {
+  const found = parseCaption(text).find((part) => part.type === 'link');
+  return found ? found.href : null;
+}

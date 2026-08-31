@@ -115,7 +115,7 @@ function Hero({ src, isVideo }) {
  * card recognisable, and `loading="lazy"` on an 18px image inside the chat
  * scroller left it permanently un-fetched.
  */
-function Favicon({ src, fallback }) {
+export function Favicon({ src, fallback }) {
   const [step, setStep] = useState(0);
   const chain = [src, fallback].filter(Boolean);
 
@@ -155,7 +155,7 @@ export function LinkPreviewSkeleton() {
 
 /* ───────────────────────────── plumbing ───────────────────────────── */
 
-function useResolvedPreview(url, attached, enabled) {
+export function useResolvedPreview(url, attached, enabled) {
   const [, bump] = useState(0);
 
   useEffect(() => {
@@ -172,7 +172,7 @@ function useResolvedPreview(url, attached, enabled) {
   return cachedPreview(url) || null;
 }
 
-function trimUrl(url) {
+export function trimUrl(url) {
   try {
     const u = new URL(url);
     const rest = (u.pathname === '/' ? '' : u.pathname) + u.search;

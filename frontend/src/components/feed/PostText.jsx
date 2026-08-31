@@ -50,6 +50,20 @@ export function PostText({ text, clamp = 240, size = 'md', className }) {
   );
 }
 
+/**
+ * What a link should read as: the host and enough path to be recognisable,
+ * without the protocol or a tracking query nobody wants to look at.
+ */
+const MAX_LINK = 42;
+
+function linkLabel(raw) {
+  let label = raw.replace(/^https?:\/\//, '').replace(/^www\./, '');
+  // A `?si=…` share token is noise; the href still carries it.
+  const query = label.indexOf('?');
+  if (query > 12) label = label.slice(0, query);
+  return label.length > MAX_LINK ? label.slice(0, MAX_LINK - 1) + '…' : label;
+}
+
 function Segment({ part }) {
   const router = useRouter();
 
@@ -64,9 +78,13 @@ function Segment({ part }) {
         target="_blank"
         rel="noopener noreferrer nofollow"
         onClick={(e) => e.stopPropagation()}
-        className={base}
+        /* A URL is a label, not prose. Left at the surrounding size it set the
+           height of the whole post — a bare YouTube link rendered as three
+           lines of huge green text — so it steps down slightly and wraps on
+           any character rather than pushing the card wide. */
+        className={cn(base, 'break-all text-[0.9em]')}
       >
-        {part.value.replace(/^https?:\/\//, '')}
+        {linkLabel(part.value)}
       </a>
     );
   }

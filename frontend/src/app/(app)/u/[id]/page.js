@@ -80,7 +80,7 @@ export default function ProfilePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-app">
-      <header className="safe-top z-20 flex h-[54px] shrink-0 items-center gap-2 border-b border-line bg-header px-2">
+      <header className="safe-top z-20 flex h-[54px] shrink-0 items-center gap-2 bg-header px-2">
         <IconButton icon={ArrowLeft} label="Back" variant="ghost" onClick={() => router.back()} />
         <h1 className="min-w-0 flex-1 truncate font-display text-[17px] tracking-tight">
           {profile?.username ? '@' + profile.username : profile?.name || 'Profile'}

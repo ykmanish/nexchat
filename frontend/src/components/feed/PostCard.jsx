@@ -8,11 +8,12 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useFeed, countLabel } from '@/store/feed';
 import { mediaUrl } from '@/lib/api';
 import { useUI } from '@/store/ui';
-import { feedTime } from '@/lib/feedtext';
+import { feedTime, firstLink } from '@/lib/feedtext';
 import { cn } from '@/lib/utils';
 import { PostMedia } from './PostMedia';
 import { PostText } from './PostText';
 import { PostActions } from './PostActions';
+import { PostLinkPreview } from './PostLinkPreview';
 import { FollowButton } from './FollowButton';
 
 const AUDIENCE = {
@@ -49,6 +50,7 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
   const body = isBoost ? original : post;
   const media = body.media || [];
   const hasMedia = media.length > 0;
+  const linkUrl = firstLink(body.text);
 
   const openAuthor = useCallback(
     (e) => {
@@ -178,7 +180,9 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
         <div className="px-4 pb-3">
           <PostText
             text={body.text}
-            size={!hasMedia && body.text.length < 90 ? 'lg' : 'md'}
+            /* A short post gets the larger type, unless the short thing is a
+               link — a bare URL at 19px is all anybody would see. */
+            size={!hasMedia && !linkUrl && body.text.length < 90 ? 'lg' : 'md'}
             clamp={hasMedia ? 280 : 420}
           />
         </div>
@@ -192,6 +196,11 @@ export const PostCard = memo(function PostCard({ post, priority = false, onOpenP
           <PostText text={post.text} clamp={280} />
         </div>
       )}
+
+      {/* A link gets a card of its own when there is no photo to look at.
+          With media the picture is the subject and a second card below it
+          would just be clutter — the link stays live in the text either way. */}
+      {!hasMedia && linkUrl && <PostLinkPreview url={linkUrl} />}
 
       {hasMedia && (
         <PostMedia
