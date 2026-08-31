@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { CallLink, Call, Conversation } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -282,4 +283,47 @@ export const decideKnock = asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+/**
+ * ICE servers for a call, with a credential that expires.
+ *
+ * The obvious way to ship a TURN relay is to put its username and password in
+ * the client bundle. That works, and it also hands the relay to anyone who
+ * opens devtools — an open proxy on your own IP address, billed to you. coturn
+ * solves this with a shared secret the client never sees: the username is an
+ * expiry timestamp, the password is an HMAC of it, and the server checks the
+ * arithmetic rather than looking anything up. A leaked credential is worth
+ * whatever is left of its few hours.
+ *
+ * Fetched per call rather than at load, so a tab left open overnight does not
+ * try to connect with a credential that expired while nobody was looking.
+ */
+const STUN = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+];
+
+export const iceServers = asyncHandler(async (req, res) => {
+  const servers = [{ urls: STUN }];
+  const urls = env.turn.urls.split(',').map((u) => u.trim()).filter(Boolean);
+
+  if (urls.length && env.turn.secret) {
+    const expiry = Math.floor(Date.now() / 1000) + env.turn.ttl;
+    const username = expiry + ':' + req.user.id;
+    const credential = crypto
+      .createHmac('sha1', env.turn.secret)
+      .update(username)
+      .digest('base64');
+
+    servers.push({ urls, username, credential });
+  }
+
+  res.json({
+    iceServers: servers,
+    /* So the call screen can say "there is no relay configured" instead of
+       leaving somebody staring at "Connecting…" wondering what they did. */
+    relay: servers.length > 1,
+    expiresIn: env.turn.ttl,
+  });
 });

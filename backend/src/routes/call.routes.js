@@ -7,6 +7,9 @@ import * as v from '../validators/index.js';
 const router = Router();
 router.use(authenticate, requireVerified);
 
+/* Before /links/:code so "ice" is never read as a link code. */
+router.get('/ice', calls.iceServers);
+
 router.post('/links', validate(v.callLinkSchema), calls.createLink);
 router.get('/links', calls.listLinks);
 

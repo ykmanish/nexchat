@@ -1,5 +1,6 @@
 'use client';
 
+import { api } from './api';
 import { emit, getSocket } from './socket';
 
 /**
@@ -39,26 +40,76 @@ import { emit, getSocket } from './socket';
  * "calls don't work" looks like. The public STUN servers below are enough for
  * two devices on the same wifi and not much else.
  */
-function iceServers() {
-  const servers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ];
+const STUN = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
 
-  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
-  if (turnUrl) {
-    servers.push({
-      urls: turnUrl.split(',').map((u) => u.trim()).filter(Boolean),
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME || undefined,
-      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || undefined,
-    });
-  }
+/* Cached because the credential is valid for hours, not for one call, and
+   because the answer is needed at the exact moment nobody wants to wait for a
+   round-trip. Refetched once it is inside its last few minutes. */
+let cached = null;
+let inflight = null;
+const EARLY_MS = 5 * 60_000;
 
-  return servers;
+const fresh = () =>
+  cached && Date.now() < cached.until - EARLY_MS ? cached : null;
+
+/**
+ * Asks the server for a relay and a credential to use it with.
+ *
+ * The credential is minted per request and expires, so it lives here rather
+ * than in the bundle. `NEXT_PUBLIC_TURN_*` is still honoured for a relay whose
+ * credentials are genuinely static — a hosted plan on a free tier, say — but
+ * anything in those variables is readable by anyone who loads the page, so the
+ * server route is the one to prefer.
+ */
+export async function iceServers() {
+  const hit = fresh();
+  if (hit) return hit.servers;
+  if (inflight) return inflight;
+
+  inflight = (async () => {
+    try {
+      const { data } = await api.get('/calls/ice');
+      const servers = data?.iceServers?.length ? data.iceServers : STUN;
+      cached = {
+        servers,
+        relay: !!data?.relay,
+        until: Date.now() + (data?.expiresIn || 3600) * 1000,
+      };
+      return servers;
+    } catch {
+      /* A relay we cannot ask about is not a reason to abandon the call — most
+         calls do not need one. Fall back to whatever is in the bundle, then to
+         plain STUN, and let the connection state report the truth. */
+      const envUrl = process.env.NEXT_PUBLIC_TURN_URL;
+      const servers = [...STUN];
+      if (envUrl) {
+        servers.push({
+          urls: envUrl.split(',').map((u) => u.trim()).filter(Boolean),
+          username: process.env.NEXT_PUBLIC_TURN_USERNAME || undefined,
+          credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || undefined,
+        });
+      }
+      cached = { servers, relay: !!envUrl, until: Date.now() + 60_000 };
+      return servers;
+    } finally {
+      inflight = null;
+    }
+  })();
+
+  return inflight;
 }
 
-/** Whether a relay is configured, so the UI can be honest about it. */
-export const hasTurn = () => !!process.env.NEXT_PUBLIC_TURN_URL;
+/**
+ * Whether a relay is available, so the failure screen can name the reason.
+ *
+ * Answers from the last fetch rather than asking, because it is read while
+ * rendering. Before the first call it assumes a relay exists — claiming one is
+ * missing on no evidence would be worse than saying nothing.
+ */
+export const hasTurn = () => (cached ? cached.relay : true);
 
 export const CALL_STATES = {
   connecting: 'connecting',
@@ -176,6 +227,11 @@ export function startCall({
   const ready = (async () => {
     state(CALL_STATES.connecting);
 
+    /* Started, not awaited: it overlaps the microphone prompt, which is the
+       slowest thing here by a wide margin, so asking for a relay costs nothing
+       in call setup time. */
+    const ice = iceServers();
+
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -191,7 +247,7 @@ export function startCall({
     }
 
     pc = new RTCPeerConnection({
-      iceServers: iceServers(),
+      iceServers: await ice,
       /* A few candidates are gathered before the first one is reported, which
          shortens the handshake noticeably on a good network. */
       iceCandidatePoolSize: 4,

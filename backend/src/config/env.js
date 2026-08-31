@@ -45,6 +45,20 @@ export const env = {
     subject: process.env.VAPID_SUBJECT || 'mailto:no-reply@nexchat.app',
   },
 
+  /* TURN relay, for calls that cannot go peer-to-peer.
+
+     `secret` is coturn's `static-auth-secret`. It never leaves the server: the
+     client asks for a credential and gets a short-lived one derived from it,
+     which is the difference between a relay only your users can use and an
+     open proxy anyone who reads your JavaScript bundle can run traffic
+     through. Leave it blank and calls still work between two devices that can
+     reach each other directly. */
+  turn: {
+    urls: process.env.TURN_URLS || '',
+    secret: process.env.TURN_SECRET || '',
+    ttl: int(process.env.TURN_TTL_SECONDS, 12 * 3600),
+  },
+
   /* Firebase Cloud Messaging, for the Android app. Either a path to the
      service-account JSON downloaded from the Firebase console, or that same
      JSON inline for deployments that would rather not mount a file. Leave both
