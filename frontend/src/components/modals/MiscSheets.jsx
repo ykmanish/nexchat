@@ -11,6 +11,7 @@ import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
 import { bubbleTime, truncate, cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { VANISHED_SHORT } from '@/lib/vanished';
 
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 
@@ -217,7 +218,7 @@ export function MessageInfoSheet({ open, onClose, message, conversation }) {
         <div className="ml-auto max-w-[85%] rounded-lg bg-[var(--bubble-out)] px-3 py-2 text-[var(--bubble-out-ink)] shadow-bubble">
           <p className="text-[14.5px] leading-snug">
             {message.deletedForEveryone
-              ? 'This message was deleted'
+              ? VANISHED_SHORT
               : truncate(plain[message._id]?.text || 'Attachment', 180)}
           </p>
           <p className="mt-1 text-right text-[11px] text-[var(--bubble-out-meta)]">

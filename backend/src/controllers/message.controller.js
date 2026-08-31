@@ -336,8 +336,24 @@ export const togglePin = asyncHandler(async (req, res) => {
 
 /** Forwarding re-encrypts on the client, so this just records the new copies. */
 export const forwardMessages = asyncHandler(async (req, res) => {
-  const { items = [] } = req.body;
+  const { items = [], from = null } = req.body;
   if (!items.length) throw ApiError.badRequest('Nothing to forward', 'NO_ITEMS');
+
+  /* Nothing leaves a secret chat.
+     The bodies are ciphertext, so the server cannot tell what is being
+     forwarded or where it came from — the client says. That makes this a rule
+     an honest client keeps rather than one the server enforces, which is the
+     same bargain as every "do not forward" feature in every messenger: a
+     modified client can copy anything it is able to read. It is worth having
+     because it stops the ordinary case, and the app says exactly this instead
+     of promising more. */
+  if (from) {
+    const source = await Conversation.findById(from).select('secret memberIds');
+    const mine = source && source.memberIds.some((m) => String(m) === String(req.user._id));
+    if (mine && source.secret?.enabled && source.secret?.blockForwarding !== false) {
+      throw ApiError.forbidden('Messages in a secret chat cannot be forwarded', 'SECRET_NO_FORWARD');
+    }
+  }
 
   const created = [];
 

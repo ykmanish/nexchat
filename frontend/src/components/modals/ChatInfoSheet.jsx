@@ -20,11 +20,13 @@ import {
   Trash2,
   UserPlus,
   Users,
+  ShieldAlert,
 } from 'lucide-react';
 import { Sheet, ConfirmDialog } from '@/components/ui/Sheet';
 import { ListButton, Button } from '@/components/ui/Button';
 import { saveContactMenuItem } from '@/components/chat/SaveContactBar';
 import { Switch, RadioRow } from '@/components/ui/Field';
+import { CAPTURE_CAVEAT } from '@/lib/captureguard';
 import { Avatar } from '@/components/ui/Avatar';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
@@ -41,10 +43,21 @@ const DISAPPEARING = [
   { value: 7776000, label: '90 days' },
 ];
 
+/* One place for the sub-view titles, so adding a view cannot leave it wearing
+   the previous one's heading — which is exactly what happened when Secret mode
+   was added and it announced itself as "Disappearing messages". */
+const VIEW_TITLES = {
+  main: undefined,
+  safety: 'Safety number',
+  secret: 'Secret mode',
+  disappearing: 'Disappearing messages',
+};
+
 export function ChatInfoSheet({ open, onClose, conversation: initial }) {
   const router = useRouter();
   const user = useAuth((s) => s.user);
   const setConversationState = useChat((s) => s.setConversationState);
+  const setSecretMode = useChat((s) => s.setSecretMode);
   const removeConversation = useChat((s) => s.removeConversation);
 
   // The sheet is opened with a snapshot; read the live row so toggles inside
@@ -79,6 +92,15 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
 
   const members = (conversation.participants || []).filter((p) => !p.leftAt);
 
+  async function setSecret(patch) {
+    try {
+      await setSecretMode(conversation._id, patch);
+      feedback('select');
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
   async function setDisappearing(seconds) {
     try {
       await api.patch('/conversations/' + conversation._id, {
@@ -99,7 +121,7 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
       <Sheet
         open={open}
         onClose={onClose}
-        title={view === 'main' ? undefined : view === 'safety' ? 'Safety number' : 'Disappearing messages'}
+        title={VIEW_TITLES[view]}
         size="md"
         showHandle
       >
@@ -161,6 +183,21 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
                 sublabel={isDirect ? 'Compare safety numbers' : 'End-to-end encrypted'}
                 chevron
                 onClick={() => setView('safety')}
+              />
+              <div className="divider mx-5" />
+              <ListButton
+                icon={ShieldAlert}
+                iconClass={
+                  conversation.secret?.enabled ? 'bg-brand-tint text-brand-strong' : undefined
+                }
+                label="Secret mode"
+                sublabel={
+                  conversation.secret?.enabled
+                    ? 'On — vanishing, no forwarding, blank notifications'
+                    : 'Off'
+                }
+                chevron
+                onClick={() => setView('secret')}
               />
               <div className="divider mx-5" />
               <ListButton
@@ -359,6 +396,69 @@ export function ChatInfoSheet({ open, onClose, conversation: initial }) {
                 </p>
               </div>
             )}
+
+            <Button variant="secondary" size="block" className="mt-6" onClick={() => setView('main')}>
+              Done
+            </Button>
+          </div>
+        )}
+
+        {view === 'secret' && (
+          <div className="pb-6">
+            <p className="px-6 pb-4 text-[13.5px] leading-relaxed text-ink-muted">
+              Every chat here is already end-to-end encrypted. Secret mode is about what the two
+              devices are allowed to do with a message once it has arrived.
+            </p>
+
+            <div className="mx-4 overflow-hidden rounded-2xl bg-surface-2">
+              <div className="px-5 py-4">
+                <Switch
+                  label="Secret mode"
+                  sublabel="Turns on the three below, and starts a vanishing timer if none is set"
+                  checked={!!conversation.secret?.enabled}
+                  onChange={(v) => setSecret({ enabled: v })}
+                />
+              </div>
+
+              {conversation.secret?.enabled && (
+                <>
+                  <div className="divider mx-5" />
+                  <div className="px-5 py-4">
+                    <Switch
+                      label="Screenshot alerts"
+                      sublabel="Tell the other person when this device looks like it captured the chat"
+                      checked={conversation.secret?.screenshotAlerts !== false}
+                      onChange={(v) => setSecret({ screenshotAlerts: v })}
+                    />
+                  </div>
+                  <div className="divider mx-5" />
+                  <div className="px-5 py-4">
+                    <Switch
+                      label="Hide notifications"
+                      sublabel="Alerts say “New message” — no name, no preview"
+                      checked={conversation.secret?.hideNotifications !== false}
+                      onChange={(v) => setSecret({ hideNotifications: v })}
+                    />
+                  </div>
+                  <div className="divider mx-5" />
+                  <div className="px-5 py-4">
+                    <Switch
+                      label="Block forwarding"
+                      sublabel="Messages from this chat cannot be forwarded on"
+                      checked={conversation.secret?.blockForwarding !== false}
+                      onChange={(v) => setSecret({ blockForwarding: v })}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Said plainly. Somebody turning this on to protect something real
+                deserves to know where the line is rather than to find out. */}
+            <p className="mx-4 mt-4 rounded-xl bg-surface-2 px-4 py-3 text-[12px] leading-relaxed text-ink-muted">
+              {CAPTURE_CAVEAT} Forwarding and alerts depend on the other person’s app playing
+              along — they stop the ordinary case, not a determined one.
+            </p>
 
             <Button variant="secondary" size="block" className="mt-6" onClick={() => setView('main')}>
               Done

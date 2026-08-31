@@ -56,6 +56,23 @@ async function show(data) {
     });
   }
 
+  /* A secret chat is allowed to say that something arrived and nothing else.
+     One shared tag for all of them, so the count of separate notifications
+     cannot be read as a count of conversations either. */
+  if (data.hidden) {
+    return self.registration.showNotification('Chax', {
+      body: 'New message',
+      icon: '/icon-192.png',
+      badge: '/icon-96.png',
+      tag: 'chax-secret',
+      renotify: false,
+      requireInteraction: false,
+      vibrate: [40, 60, 40],
+      timestamp: data.at ? new Date(data.at).getTime() : Date.now(),
+      data: { conversationId: data.conversationId, type: data.type },
+    });
+  }
+
   const from = data.senderName || 'Someone';
   const title = data.isGroup && data.conversationName ? data.conversationName : from;
 

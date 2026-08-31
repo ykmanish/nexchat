@@ -75,6 +75,31 @@ const conversationSchema = new mongoose.Schema(
       slowModeSeconds: { type: Number, default: 0, min: 0, max: 21600 },
     },
 
+    /**
+     * Secret mode.
+     *
+     * Every chat here is already end-to-end encrypted, so this is not about
+     * the wire — it is about what the *devices* at each end are allowed to do
+     * with a message once it has arrived. Forwarding it on, keeping it after
+     * it was read, showing it on a lock screen, quietly photographing it.
+     *
+     * Kept as its own object rather than a single boolean because the pieces
+     * are genuinely separable: somebody may want a chat that never appears in
+     * a notification but does not vanish, or the reverse.
+     */
+    secret: {
+      enabled: { type: Boolean, default: false },
+      /** Tell the other side when this device suspects a screen capture. */
+      screenshotAlerts: { type: Boolean, default: true },
+      /** Notifications say "New message" and nothing else. */
+      hideNotifications: { type: Boolean, default: true },
+      /** Refuse to forward, star or quote a message out of this chat. */
+      blockForwarding: { type: Boolean, default: true },
+      /** Who turned it on, and when — so the banner can say so honestly. */
+      enabledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      enabledAt: { type: Date, default: null },
+    },
+
     /** Removed and barred from coming back — a plain kick leaves nothing to
      *  stop the same person walking in through the invite link again. */
     bans: [

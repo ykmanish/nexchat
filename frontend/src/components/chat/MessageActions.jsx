@@ -63,6 +63,10 @@ export function MessageActions({ conversation }) {
 
   const toggleReaction = useChat((s) => s.toggleReaction);
   const toggleStar = useChat((s) => s.toggleStar);
+
+  /* The rule belongs to the chat, and the chat is right here as a prop — no
+     need to go looking for it through the message. */
+  const secret = !!conversation?.secret?.enabled;
   const togglePin = useChat((s) => s.togglePin);
   const deleteMessage = useChat((s) => s.deleteMessage);
   const plain = useChat((s) => s.plain);
@@ -252,16 +256,26 @@ export function MessageActions({ conversation }) {
     {
       label: 'Copy',
       icon: Copy,
-      hidden: !plain[message?._id]?.text,
+      hidden: secret || !plain[message?._id]?.text,
       onClick: async () => {
         await navigator.clipboard.writeText(plain[message._id]?.text || '');
         toast.success('Copied');
       },
     },
-    { label: 'Forward', icon: Forward, onClick: () => setForwarding([message]) },
+    /* Forward, copy and star all take a message *out* of the chat, which is
+       the one thing secret mode exists to stop. Hidden rather than shown and
+       refused: an action that is always going to say no is just a place to be
+       told off. */
+    {
+      label: 'Forward',
+      icon: Forward,
+      hidden: secret,
+      onClick: () => setForwarding([message]),
+    },
     {
       label: message?.starred ? 'Unstar' : 'Star',
       icon: Star,
+      hidden: secret,
       onClick: () => toggleStar(message),
     },
     {

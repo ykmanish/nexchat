@@ -8,6 +8,7 @@ import { useChat } from '@/store/chat';
 import { useUI } from '@/store/ui';
 import { cn, chatTime, truncate } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
+import { VANISHED_SHORT } from '@/lib/vanished';
 
 const KIND_ICONS = {
   image: ImageIcon,
@@ -54,7 +55,7 @@ function usePreview(conversation, currentUserId) {
     return { text: last.call?.mode === 'video' ? 'Video call' : 'Voice call', icon: Phone };
   }
   if (last.deletedForEveryone) {
-    return { text: 'This message was deleted', muted: true, italic: true };
+    return { text: VANISHED_SHORT, muted: true, italic: true };
   }
 
   const isMine = String(last.sender?._id || last.sender) === String(currentUserId);
@@ -107,8 +108,15 @@ function systemText(message) {
     'member.joined': actor + ' joined',
     'member.promoted': targets + ' is now an admin',
     'member.demoted': targets + ' is no longer an admin',
+    'secret.on': actor + ' turned on secret mode',
+    'secret.off': actor + ' turned off secret mode',
+    'secret.screenshot': actor + ' may have captured the chat',
+    'group.slowMode': actor + ' changed slow mode',
   };
-  return map[message.system?.action] || 'Group updated';
+  /* "Group updated" is a poor fallback in a direct chat, where there is no
+     group — it is only ever reached by an action this map has not been told
+     about, so say the vaguer but never-wrong thing. */
+  return map[message.system?.action] || 'Chat updated';
 }
 
 function receiptStatus(message) {

@@ -27,6 +27,9 @@ export const useUI = create((set, get) => ({
   /* ─── calls ─── */
   call: null, // { callId, mode, peer, direction, status }
 
+  /** A one-shot flourish over the whole app — see MessageEffects. */
+  effect: null, // { id, at }
+
   openSheet(type, props = {}) {
     feedback('open');
     set({ sheet: { type, props } });
@@ -100,6 +103,18 @@ export const useUI = create((set, get) => ({
 
   setCall: (call) => set({ call }),
   endCall: () => set({ call: null }),
+
+  /**
+   * Fires a message effect.
+   *
+   * `at` is a timestamp rather than a bare id so two birthday messages in a row
+   * are two separate effects: without it the state would not change on the
+   * second, and the animation would simply not play.
+   */
+  playEffect(id) {
+    if (id) set({ effect: { id, at: Date.now() } });
+  },
+  clearEffect: () => set({ effect: null }),
 
   /* ─── toasts ─── */
   toast(message, { type = 'info', duration = 3200, action } = {}) {

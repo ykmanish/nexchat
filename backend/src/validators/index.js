@@ -247,6 +247,11 @@ export const reactionSchema = z.object({
 });
 
 export const forwardSchema = z.object({
+  /* Where these messages came from. Zod strips keys it has not been told
+     about, so leaving this out silently emptied `req.body.from` and the
+     secret-chat forward block never fired — it looked like it worked because
+     nothing errored. */
+  from: objectId.nullable().optional(),
   items: z
     .array(
       z.object({
@@ -356,6 +361,13 @@ export const postUpdateSchema = z.object({
 export const commentSchema = z.object({
   text: z.string().trim().min(1, 'Say something first').max(1000, 'That comment is too long'),
   parent: objectId.nullable().optional(),
+});
+
+export const secretModeSchema = z.object({
+  enabled: z.boolean().optional(),
+  screenshotAlerts: z.boolean().optional(),
+  hideNotifications: z.boolean().optional(),
+  blockForwarding: z.boolean().optional(),
 });
 
 export { objectId };

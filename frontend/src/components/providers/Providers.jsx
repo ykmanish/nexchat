@@ -9,6 +9,7 @@ import { useUI } from '@/store/ui';
 import { onUnauthorized } from '@/lib/api';
 import { getSocket, connectSocket } from '@/lib/socket';
 import { unlockAudio, feedback } from '@/lib/sound';
+import { effectFor } from '@/lib/messageeffects';
 import { ToastStack } from '@/components/ui/Toast';
 import { applyBubbleTheme, applyFontScale, STATUS_BAR } from '@/lib/theme';
 import { vault } from '@/lib/vault';
@@ -151,6 +152,14 @@ function SocketBridge() {
             feedback(message.mentionedMe ? 'mention' : 'receive');
           }
           if (!isActive && audible(conv, message)) notify(conv, message, me());
+
+          /* A flourish only for the chat you are actually looking at. Setting
+             one off over the feed because a birthday message landed in a thread
+             three screens away would be an ambush, not a delight. */
+          if (isActive && me().settings?.messageEffects !== false) {
+            const text = chat().plain?.[message._id]?.text;
+            useUI.getState().playEffect(effectFor(text));
+          }
         }
       },
 

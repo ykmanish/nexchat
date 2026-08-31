@@ -10,6 +10,10 @@ const settingsSchema = new mongoose.Schema(
     haptics: { type: Boolean, default: true },
     enterToSend: { type: Boolean, default: true },
     reduceMotion: { type: Boolean, default: false },
+    /* Whether a message like "happy birthday" sets off a flourish. Honoured on
+       the *receiving* side: whoever has to watch the animation is the one who
+       decides whether it plays. */
+    messageEffects: { type: Boolean, default: true },
     fontScale: { type: Number, default: 1, min: 0.85, max: 1.3 },
     notifications: {
       messages: { type: Boolean, default: true },

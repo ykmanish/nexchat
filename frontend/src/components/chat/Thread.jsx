@@ -23,6 +23,7 @@ import { TypingBubble } from './TypingBubble';
 import { MessageActions } from './MessageActions';
 import { SelectionBar } from './SelectionBar';
 import { PinnedBar } from './PinnedBar';
+import { SecretGuard, SecretBanner } from './SecretGuard';
 
 export function Thread({ conversationId }) {
   const router = useRouter();
@@ -195,6 +196,9 @@ export function Thread({ conversationId }) {
         )}
       </AnimatePresence>
 
+      <SecretGuard conversation={conversation} />
+      <SecretBanner conversation={conversation} />
+
       <PinnedBar conversation={conversation} />
 
       {/* ── message list ── */}
@@ -202,6 +206,9 @@ export function Thread({ conversationId }) {
         ref={scrollRef}
         onScroll={onScroll}
         data-private
+        /* In a secret chat the whole transcript is what the capture guard
+           blanks, not one photo inside it. */
+        {...(conversation?.secret?.enabled ? { 'data-capture-guard': '' } : {})}
         className="scroll-soft scroll-layer relative z-[1] min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
       >
         <div className="mx-auto flex min-h-full w-full max-w-[900px] flex-col justify-end pb-2 pt-3">

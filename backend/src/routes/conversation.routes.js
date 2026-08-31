@@ -15,6 +15,10 @@ router.post('/join/:code', conv.joinByInvite);
 
 router.get('/:id', conv.getConversation);
 router.patch('/:id', validate(v.updateConversationSchema), conv.updateConversation);
+router.patch('/:id/secret', validate(v.secretModeSchema), conv.setSecretMode);
+/* Reported by a client that suspects a capture. 204 either way — there is
+   nothing useful the reporting device could do with a failure. */
+router.post('/:id/screenshot', conv.reportScreenshot);
 router.delete('/:id', conv.deleteConversation);
 
 router.post('/:id/members', conv.addMembers);

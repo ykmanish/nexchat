@@ -8,6 +8,7 @@ import {
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
 import { useUI, toast } from '@/store/ui';
+import { vanishedLine, VANISHED_SHORT } from '@/lib/vanished';
 import { cn, bubbleTime, isEmojiOnly, linkify, highlightParts, scrollToMessage } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 import { Avatar } from '@/components/ui/Avatar';
@@ -313,8 +314,7 @@ export function MessageBubble({
           {/* body — the trailing pad reserves room for the inline timestamp */}
           {deleted ? (
             <p className="flex items-center gap-1.5 px-1 text-[14.5px] italic opacity-60">
-              <AlertCircle size={13} />
-              This message was deleted
+              {vanishedLine(message._id)}
               {/* The timestamp is absolutely positioned, so every body has to
                   reserve room for it or the two overlap. */}
               <span className="w-[52px] shrink-0" aria-hidden />
@@ -531,7 +531,7 @@ export function ThreadChip({ count, lastReplyAt, onOpen }) {
 
 function QuotedReply({ reply, isMine }) {
   const plain = useChat((s) => s.plain[reply._id]);
-  const text = plain?.text || (reply.deletedForEveryone ? 'Deleted message' : 'Message');
+  const text = plain?.text || (reply.deletedForEveryone ? VANISHED_SHORT : 'Message');
   const accent = reply.sender?.avatarColor || 'var(--accent)';
 
   /** Tapping a quote jumps to the message it quotes. */

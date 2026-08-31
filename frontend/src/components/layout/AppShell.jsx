@@ -18,6 +18,7 @@ import { SheetHost } from '@/components/modals/SheetHost';
 import { CallOverlay } from '@/components/chat/CallOverlay';
 import { Lightbox } from '@/components/chat/Lightbox';
 import { TiltCurtain } from '@/components/chat/TiltCurtain';
+import { MessageEffects } from '@/components/chat/MessageEffects';
 import { ShakeSosGuard } from '@/components/chat/ShakeSosGuard';
 
 /**
@@ -224,6 +225,7 @@ export function AppShell({ children }) {
       <CallOverlay />
       <Lightbox />
       <TiltCurtain />
+      <MessageEffects />
       {/* Armed only while signed in and unlocked — the same reasoning as the
           flip gesture. There is nothing to send from behind a lock screen, and
           a shake while the phone is in a pocket with the app locked is far more

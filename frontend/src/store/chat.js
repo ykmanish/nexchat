@@ -7,7 +7,8 @@ import { vault } from '@/lib/vault';
 import * as e2ee from '@/lib/e2ee';
 import { uid } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
-import { toast } from '@/store/ui';
+import { toast, useUI } from '@/store/ui';
+import { effectFor } from '@/lib/messageeffects';
 
 /** Recipients for a fan-out: every member of the chat, ourselves included, so
  *  our own other devices can read what we send. */
@@ -237,6 +238,30 @@ export const useChat = create((set, get) => ({
     return data.conversation;
   },
 
+  /**
+   * Turns secret mode on or off for a chat.
+   *
+   * It is a property of the conversation, not of one side of it: a chat where
+   * one person's copy vanishes and the other's does not would be worse than no
+   * feature at all. Both ends get the change over the socket.
+   */
+  async setSecretMode(conversationId, patch) {
+    const { data } = await api.patch('/conversations/' + conversationId + '/secret', patch);
+    get().patchConversation(conversationId, { secret: data.secret, settings: data.settings });
+    return data;
+  },
+
+  /**
+   * Tells the other side this device may have just captured the chat.
+   *
+   * Fire and forget, and deliberately unreported on failure — the person who
+   * triggered it is not the person it is for, and there is nothing useful to
+   * say to them about it either way.
+   */
+  reportScreenshot(conversationId, kind = 'screenshot') {
+    api.post('/conversations/' + conversationId + '/screenshot', { kind }).catch(() => {});
+  },
+
   async createGroup(payload) {
     const { data } = await api.post('/conversations/group', payload);
     get().upsertConversation(data.conversation);
@@ -452,6 +477,12 @@ export const useChat = create((set, get) => ({
       createdAt: new Date().toISOString(),
       pending: true,
     };
+
+    /* Fired from the optimistic bubble, so it lands on the frame the message
+       appears rather than after the round trip. */
+    if (text && getMe()?.settings?.messageEffects !== false) {
+      useUI.getState().playEffect(effectFor(text));
+    }
 
     set((s) => ({
       // A reply is optimistically added to its thread, never to the timeline —
@@ -767,7 +798,12 @@ export const useChat = create((set, get) => ({
       });
     }
 
-    const { data } = await api.post('/messages/forward', { items });
+    /* Naming the source lets the server refuse a forward out of a secret
+       chat. It cannot tell from the ciphertext, so the client has to say. */
+    const { data } = await api.post('/messages/forward', {
+      items,
+      from: message.conversation ? String(message.conversation) : null,
+    });
     await get().decryptMany(data.messages);
     return data.messages;
   },

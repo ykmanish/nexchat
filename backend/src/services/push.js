@@ -341,16 +341,35 @@ export async function pushNewMessage({
 }) {
   if (!ready) return;
 
-  const basePayload = {
-    type: 'message',
-    conversationId: String(conversation._id),
-    messageId: String(message._id),
-    senderName: sender?.name || 'Someone',
-    conversationName: conversation.type === 'direct' ? sender?.name : conversation.name,
-    isGroup: conversation.type !== 'direct',
-    threadRoot: threadRoot ? String(threadRoot) : null,
-    at: message.createdAt,
-  };
+  /* A secret chat gives a notification nothing to say.
+     Not even who wrote — the name on a lock screen is most of what a glance
+     over a shoulder gets, and a chat you turned this on for is exactly the one
+     where that matters. `hidden` also tells the service worker not to group or
+     re-notify by conversation, which would leak the same thing by counting. */
+  const hidden = !!conversation.secret?.enabled && conversation.secret?.hideNotifications !== false;
+
+  const basePayload = hidden
+    ? {
+        type: 'message',
+        hidden: true,
+        conversationId: String(conversation._id),
+        messageId: String(message._id),
+        senderName: 'Chax',
+        conversationName: 'Secret chat',
+        isGroup: false,
+        threadRoot: null,
+        at: message.createdAt,
+      }
+    : {
+        type: 'message',
+        conversationId: String(conversation._id),
+        messageId: String(message._id),
+        senderName: sender?.name || 'Someone',
+        conversationName: conversation.type === 'direct' ? sender?.name : conversation.name,
+        isGroup: conversation.type !== 'direct',
+        threadRoot: threadRoot ? String(threadRoot) : null,
+        at: message.createdAt,
+      };
 
   await Promise.all(
     recipients.map((r) => {

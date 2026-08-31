@@ -90,6 +90,7 @@ export function serialize(conv, userId, viewer = null) {
     pinnedMessages: doc.pinnedMessages || [],
     inviteCode: doc.inviteCode,
     settings: doc.settings,
+    secret: doc.secret,
     bannedCount: (doc.bans || []).length,
 
     /* First-contact signal, where most scams begin. Free: `lastSentAt` is
@@ -126,13 +127,27 @@ async function loadConversation(id, userId, { populate = true } = {}) {
   if (populate) {
     query = query
       .populate('participants.user', POPULATE_USER)
-      .populate({ path: 'lastMessage', populate: { path: 'sender', select: 'name avatar' } });
+      .populate({
+        path: 'lastMessage',
+        populate: [
+          { path: 'sender', select: 'name avatar' },
+          /* System events name whoever did the thing, and the chat list shows
+             that preview — without this it read "Someone turned on secret
+             mode" next to a chat with exactly one other person in it. */
+          { path: 'system.actor', select: 'name avatar' },
+          { path: 'system.targets', select: 'name avatar' },
+        ],
+      });
   }
 
   const conv = await query;
   if (!conv) throw ApiError.notFound('Conversation not found', 'NO_CONVERSATION');
   return conv;
 }
+
+/** Whether this account is still a live participant. */
+const isMember = (conv, userId) =>
+  (conv.memberIds || []).some((m) => String(m) === String(userId));
 
 /** Server-authored membership events — plaintext by design. */
 async function postSystemMessage(conv, action, actorId, targets = [], meta = null) {
@@ -757,3 +772,96 @@ export const joinByInvite = asyncHandler(async (req, res) => {
 });
 
 export { postSystemMessage, loadConversation };
+
+/* ────────────────────────────── secret mode ──────────────────────────────
+   What this is and is not, stated once so the UI cannot drift from it.
+
+   Every message in this app is already end-to-end encrypted; secret mode adds
+   nothing to that and does not claim to. What it changes is what the two
+   devices are permitted to do with a message after it has arrived: whether it
+   can be forwarded out, how long it survives, whether it shows on a lock
+   screen, and whether the other side is told when a capture is suspected.
+
+   All of it is enforced by clients that choose to co-operate — a modified
+   client can forward anything it can read, and no server can prevent that.
+   The forwarding block below is still worth having because it stops the
+   ordinary case, and the copy in the app says exactly this rather than
+   promising more. */
+
+const SECRET_DEFAULT_TTL = 24 * 60 * 60; // a day, when none is set already
+
+export const setSecretMode = asyncHandler(async (req, res) => {
+  const { enabled, screenshotAlerts, hideNotifications, blockForwarding } = req.body;
+
+  const conv = await Conversation.findById(req.params.id);
+  if (!conv) throw ApiError.notFound('Chat not found', 'NO_CONVERSATION');
+  if (!isMember(conv, req.user._id)) throw ApiError.forbidden('Not a member', 'NOT_MEMBER');
+
+  const was = !!conv.secret?.enabled;
+
+  if (enabled !== undefined) conv.secret.enabled = !!enabled;
+  if (screenshotAlerts !== undefined) conv.secret.screenshotAlerts = !!screenshotAlerts;
+  if (hideNotifications !== undefined) conv.secret.hideNotifications = !!hideNotifications;
+  if (blockForwarding !== undefined) conv.secret.blockForwarding = !!blockForwarding;
+
+  if (conv.secret.enabled && !was) {
+    conv.secret.enabledBy = req.user._id;
+    conv.secret.enabledAt = new Date();
+    /* Turning it on with no timer set would leave "auto-delete" as a promise
+       nothing keeps. An existing choice is left alone — the person who set
+       seven days meant seven days. */
+    if (!conv.settings.disappearingSeconds) {
+      conv.settings.disappearingSeconds = SECRET_DEFAULT_TTL;
+    }
+  }
+
+  await conv.save();
+
+  if (enabled !== undefined && !!enabled !== was) {
+    await postSystemMessage(conv, enabled ? 'secret.on' : 'secret.off', req.user._id, [], {
+      seconds: conv.settings.disappearingSeconds,
+    });
+  }
+
+  getIO()?.to('conversation:' + conv._id).emit('conversation:updated', {
+    conversationId: String(conv._id),
+    patch: { secret: conv.secret, settings: conv.settings },
+  });
+
+  res.json({ success: true, secret: conv.secret, settings: conv.settings });
+});
+
+/**
+ * "Somebody may have just captured this chat."
+ *
+ * Reported by the client, because the client is the only thing in a position
+ * to notice — a browser cannot block a screenshot and the server cannot see
+ * one. That makes this an honest-participant signal rather than a guarantee,
+ * which is exactly how the UI describes it.
+ *
+ * Rate-limited per person per chat: the capture heuristics fire on window blur,
+ * so an alt-tab-heavy minute could otherwise post a dozen alerts.
+ */
+const lastAlert = new Map();
+const ALERT_GAP_MS = 20_000;
+
+export const reportScreenshot = asyncHandler(async (req, res) => {
+  const conv = await Conversation.findById(req.params.id);
+  if (!conv) throw ApiError.notFound('Chat not found', 'NO_CONVERSATION');
+  if (!isMember(conv, req.user._id)) throw ApiError.forbidden('Not a member', 'NOT_MEMBER');
+
+  if (!conv.secret?.enabled || !conv.secret?.screenshotAlerts) {
+    return res.status(204).end();
+  }
+
+  const key = String(conv._id) + ':' + String(req.user._id);
+  const now = Date.now();
+  if (now - (lastAlert.get(key) || 0) < ALERT_GAP_MS) return res.status(204).end();
+  lastAlert.set(key, now);
+
+  await postSystemMessage(conv, 'secret.screenshot', req.user._id, [], {
+    kind: req.body?.kind === 'recording' ? 'recording' : 'screenshot',
+  });
+
+  res.status(204).end();
+});

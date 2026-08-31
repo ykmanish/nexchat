@@ -239,6 +239,15 @@ export default function AppearancePage() {
         <Divider />
         <SettingsRow>
           <Switch
+            label="Message effects"
+            sublabel="Confetti for a birthday, hearts for a heart — off if you would rather not"
+            checked={settings.messageEffects !== false}
+            onChange={(v) => updateSettings({ messageEffects: v })}
+          />
+        </SettingsRow>
+        <Divider />
+        <SettingsRow>
+          <Switch
             label="Enter sends message"
             sublabel="Turn off to use Enter for a new line"
             checked={settings.enterToSend !== false}

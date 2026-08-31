@@ -16,11 +16,31 @@ const SYSTEM_TEXT = {
   'member.promoted': (a, t) => t + ' is now an admin',
   'member.demoted': (a, t) => t + ' is no longer an admin',
   'group.banned': (a, t) => a + ' removed and banned ' + t,
+  'secret.on': (a, t, meta) =>
+    a + ' turned on secret mode' + (meta?.seconds ? ' — messages vanish after ' + ttlLabel(meta.seconds) : ''),
+  'secret.off': (a) => a + ' turned off secret mode',
+  /* Named plainly. "Someone took a screenshot" would be a claim the browser
+     cannot actually make — see the note in captureguard. */
+  'secret.screenshot': (a, t, meta) =>
+    a + (meta?.kind === 'recording'
+      ? ' may be recording the screen'
+      : ' may have taken a screenshot'),
   'group.slowMode': (a, t, meta) =>
     meta?.seconds
       ? a + ' set slow mode to ' + slowLabel(meta.seconds)
       : a + ' turned slow mode off',
 };
+
+/** Reads back a disappearing timer the way a person would say it. */
+function ttlLabel(seconds) {
+  if (seconds < 3600) return Math.round(seconds / 60) + ' minutes';
+  if (seconds < 86_400) {
+    const h = Math.round(seconds / 3600);
+    return h + (h === 1 ? ' hour' : ' hours');
+  }
+  const d = Math.round(seconds / 86_400);
+  return d + (d === 1 ? ' day' : ' days');
+}
 
 /** Reads back a slow-mode gap the way a person would say it. */
 function slowLabel(seconds) {
