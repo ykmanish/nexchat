@@ -42,9 +42,9 @@
     --accent-tint: rgba(193, 255, 114, 0.34);
 
     /* bubbles — overridden per user preference */
-    --bubble-out: #dfffa8;
-    --bubble-out-ink: #17220d;
-    --bubble-out-meta: rgba(23, 34, 13, 0.48);
+    --bubble-out: #effbf3;
+    --bubble-out-ink: #17261d;
+    --bubble-out-meta: rgba(23, 38, 29, 0.46);
     --bubble-in: #ffffff;
     --bubble-in-ink: #171717;
     --bubble-in-meta: rgba(23, 23, 23, 0.42);
@@ -245,31 +245,17 @@
   }
 
   .bubble-tail-out {
-    border-top-right-radius: 0;
+    border-top-right-radius: 12px;
   }
   .bubble-tail-out::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: -8px;
-    width: 8px;
-    height: 13px;
-    background: var(--bubble-out);
-    clip-path: polygon(0 0, 100% 0, 0 100%);
+    content: none;
   }
 
   .bubble-tail-in {
-    border-top-left-radius: 0;
+    border-top-left-radius: 12px;
   }
   .bubble-tail-in::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -8px;
-    width: 8px;
-    height: 13px;
-    background: var(--bubble-in);
-    clip-path: polygon(0 0, 100% 0, 100% 100%);
+    content: none;
   }
 
   .divider {

@@ -11,7 +11,7 @@ export const BUBBLE_COLORS = [
   {
     id: 'green',
     name: 'Green',
-    light: { bg: '#dfffa8', ink: '#17220d', meta: 'rgba(23,34,13,.48)' },
+    light: { bg: '#effbf3', ink: '#17261d', meta: 'rgba(23,38,29,.46)' },
     dark: { bg: '#b9f56a', ink: '#10140c', meta: 'rgba(16,20,12,.52)' },
     swatch: '#b9f56a',
   },
