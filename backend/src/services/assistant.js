@@ -100,9 +100,12 @@ export async function handleAssistantRequest({ user, conversationId, text }) {
   const clean = cleanPrompt(text);
   const reminder = parseReminder(clean);
   const permissions = user.settings?.assistant || {};
+  const sendAction = parseSendAction(clean);
 
   let reply;
-  if (reminder) {
+  if (sendAction) {
+    reply = await performSendAction({ user, bot, action: sendAction, permissions });
+  } else if (reminder) {
     if (permissions.reminders === false) {
       reply = 'Reminder access is off for Chax. Turn it on in Settings > Chax assistant first.';
     } else {
@@ -127,6 +130,109 @@ export async function handleAssistantRequest({ user, conversationId, text }) {
 
   const message = await postAssistantMessage(conversation._id, bot._id, reply);
   return { message, conversation };
+}
+
+async function performSendAction({ user, bot, action, permissions }) {
+  if (permissions.actions !== true) {
+    return 'Action access is off for Chax. Turn it on in Settings > Chax assistant first.';
+  }
+  if (permissions.contacts !== true) {
+    return 'Contacts access is off for Chax. Turn it on in Settings > Chax assistant so I can find who to send this to.';
+  }
+
+  const target = await resolveContact(user, action.to);
+  if (!target) {
+    return 'I could not find "' + action.to + '" in the contacts you shared with me.';
+  }
+
+  const conv = await getOrCreateUserDirect(user._id, target._id);
+  await postAssistantMessage(
+    conv._id,
+    bot._id,
+    user.name + ' asked me to send this: ' + action.message
+  );
+
+  return 'Sent it to ' + target.name + ': "' + action.message + '"';
+}
+
+async function getOrCreateUserDirect(userId, targetId) {
+  let conv = await Conversation.findOne({
+    type: 'direct',
+    memberIds: { $all: [userId, targetId], $size: 2 },
+  });
+  if (conv) return conv;
+
+  conv = await Conversation.create({
+    type: 'direct',
+    createdBy: userId,
+    participants: [
+      { user: userId, role: 'member' },
+      { user: targetId, role: 'member' },
+    ],
+    memberIds: [userId, targetId],
+  });
+
+  const populated = await Conversation.findById(conv._id)
+    .populate('participants.user', POPULATE_USER)
+    .populate('lastMessage');
+  const io = getIO();
+  io?.to('user:' + userId).emit('conversation:new', {
+    conversation: serializeBasic(populated, userId),
+  });
+  io?.to('user:' + targetId).emit('conversation:new', {
+    conversation: serializeBasic(populated, targetId),
+  });
+  return conv;
+}
+
+function serializeBasic(conv, userId) {
+  const doc = conv.toObject ? conv.toObject() : conv;
+  const me = (doc.participants || []).find((p) => String(p.user?._id || p.user) === String(userId));
+  const peer = (doc.participants || []).find((p) => String(p.user?._id || p.user) !== String(userId))?.user;
+
+  return {
+    id: doc._id,
+    _id: doc._id,
+    type: doc.type,
+    name: doc.type === 'direct' ? peer?.name || 'Unknown' : doc.name,
+    avatar: doc.type === 'direct' ? peer?.avatar || null : doc.avatar,
+    avatarColor: doc.type === 'direct' ? peer?.avatarColor || '#F4C430' : doc.avatarColor,
+    about: doc.type === 'direct' ? peer?.about || '' : doc.about,
+    peer: peer || null,
+    participants: (doc.participants || []).filter((p) => p.user).map((p) => ({
+      user: p.user,
+      role: p.role,
+      joinedAt: p.joinedAt,
+      leftAt: p.leftAt,
+    })),
+    memberCount: (doc.participants || []).filter((p) => p.user && !p.leftAt).length,
+    lastMessage: doc.lastMessage || null,
+    lastMessageAt: doc.lastMessageAt,
+    seq: doc.seq,
+    settings: doc.settings,
+    secret: doc.secret,
+    unreadCount: me?.unreadCount ?? 0,
+    mentionCount: me?.mentionCount ?? 0,
+    pinned: me?.pinned ?? false,
+    muted: me?.muted ?? false,
+    archived: me?.archived ?? false,
+    role: me?.role ?? 'member',
+    isAdmin: me?.role === 'admin' || me?.role === 'owner',
+  };
+}
+
+async function resolveContact(user, rawName) {
+  const needle = String(rawName || '').trim().toLowerCase().replace(/^@/, '');
+  if (!needle) return null;
+
+  const me = await User.findById(user._id).populate('contacts', 'name username email disabledAt');
+  const contacts = (me?.contacts || []).filter((c) => !c.disabledAt);
+  return (
+    contacts.find((c) => String(c.username || '').toLowerCase() === needle) ||
+    contacts.find((c) => String(c.name || '').toLowerCase() === needle) ||
+    contacts.find((c) => String(c.email || '').toLowerCase() === needle) ||
+    contacts.find((c) => String(c.name || '').toLowerCase().includes(needle))
+  );
 }
 
 export async function postAssistantMessage(conversationId, botId, text) {
@@ -252,6 +358,18 @@ async function contactContext(user) {
 
 function cleanPrompt(text) {
   return String(text || '').replace(/^@?chax[\s,:-]*/i, '').trim();
+}
+
+function parseSendAction(text) {
+  const quoted = text.match(/\bsend\s+["“](.+?)["”]\s+to\s+(.+)$/i);
+  const plain = text.match(/\bsend\s+(.+?)\s+to\s+(.+)$/i);
+  const match = quoted || plain;
+  if (!match) return null;
+
+  return {
+    message: match[1].trim(),
+    to: match[2].trim().replace(/[.!?]+$/, ''),
+  };
 }
 
 function parseReminder(text) {

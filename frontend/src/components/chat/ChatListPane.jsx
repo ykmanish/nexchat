@@ -15,6 +15,7 @@ import {
   Star,
   Users,
   X,
+  Bot,
 } from 'lucide-react';
 import { useChat } from '@/store/chat';
 import { useAuth } from '@/store/auth';
@@ -94,6 +95,13 @@ export function ChatListPane() {
     },
     [router]
   );
+
+  async function openChaxAssistant() {
+    const { api } = await import('@/lib/api');
+    const { data } = await api.post('/assistant/direct');
+    useChat.getState().upsertConversation(data.conversation);
+    router.push('/chats/' + data.conversation._id);
+  }
 
   const visible = useMemo(() => {
     let list = conversations.filter((c) => !!c.archived === archivedView);
@@ -324,6 +332,12 @@ export function ChatListPane() {
         onClose={() => setMenuOpen(false)}
         anchorRef={menuBtn}
         items={[
+          {
+            label: 'Chax assistant',
+            icon: Bot,
+            onClick: openChaxAssistant,
+          },
+          { divider: true },
           { label: 'New group', icon: Users, onClick: () => openSheet('newGroup') },
           { label: 'New community', icon: Users, onClick: () => openSheet('newCommunity') },
           { divider: true },
