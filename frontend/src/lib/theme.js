@@ -62,12 +62,11 @@ export const BUBBLE_COLORS = [
 /**
  * Mobile status/URL-bar colour per theme.
  *
- * Kept as constants rather than read back off `--header` at runtime: the theme
- * class lands on <html> in next-themes' own effect, so any synchronous read
- * (or one a frame later) can still return the colour being replaced. These
- * must stay equal to `--header` in globals.css.
+ * Seed colours for the browser chrome. Runtime updates read the actual CSS
+ * token after the theme class lands, so the status bar follows the visible UI
+ * instead of a hard-coded brand colour.
  */
-export const STATUS_BAR = { light: '#f7f8fa', dark: '#101614' };
+export const STATUS_BAR = { light: '#ffffff', dark: '#101614' };
 
 /**
  * The status bar during a call.
@@ -141,7 +140,7 @@ function applyStatusBar() {
 /** The colour the bar returns to: the app's own header, per theme. */
 export function setStatusBarBase(isDark) {
   baseDark = !!isDark;
-  baseColor = STATUS_BAR[isDark ? 'dark' : 'light'];
+  baseColor = readCssColor('--header') || STATUS_BAR[isDark ? 'dark' : 'light'];
   applyStatusBar();
 }
 
@@ -184,4 +183,9 @@ export function applyBubbleTheme(bubbleId, isDark) {
 export function applyFontScale(scale) {
   if (typeof document === 'undefined') return;
   document.documentElement.style.setProperty('--font-scale', scale || 1);
+}
+
+function readCssColor(name) {
+  if (typeof window === 'undefined') return '';
+  return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }

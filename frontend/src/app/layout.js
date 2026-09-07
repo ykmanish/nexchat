@@ -70,14 +70,14 @@ export default function RootLayout({ children }) {
       <head>
         {/* Seeds the status-bar colour before first paint, so there is no
             white flash above a dark app while React hydrates. Mirrors the
-            --header token for each theme. */}
+            visible UI colour for each theme. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
               "(function(){try{var t=localStorage.getItem('theme');" +
               "var d=t==='dark'||((!t||t==='system')&&matchMedia('(prefers-color-scheme:dark)').matches);" +
               "var m=document.createElement('meta');m.name='theme-color';" +
-              "m.content=d?'#101614':'#f7f8fa';document.head.appendChild(m);}catch(e){}})()",
+              "m.content=d?'#101614':'#ffffff';document.head.appendChild(m);}catch(e){}})()",
           }}
         />
       </head>
