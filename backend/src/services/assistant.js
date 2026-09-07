@@ -99,9 +99,13 @@ export async function handleAssistantRequest({ user, conversationId, text }) {
   const { conversation, bot } = await ensureAssistantInConversation(conversationId, user._id);
   const clean = cleanPrompt(text);
   const reminder = parseReminder(clean);
+  const permissions = user.settings?.assistant || {};
 
   let reply;
   if (reminder) {
+    if (permissions.reminders === false) {
+      reply = 'Reminder access is off for Chax. Turn it on in Settings > Chax assistant first.';
+    } else {
     await AssistantReminder.create({
       conversation: conversation._id,
       createdBy: user._id,
@@ -109,11 +113,15 @@ export async function handleAssistantRequest({ user, conversationId, text }) {
       dueAt: reminder.dueAt,
     });
     reply = 'Done. I will remind this chat ' + formatWhen(reminder.dueAt) + ': ' + reminder.text;
+    }
   } else {
+    const contacts = permissions.contacts ? await contactContext(user) : '';
     reply = await askGroq({
       userName: user.name,
       prompt: clean,
       context: conversation.type === 'direct' ? 'direct chat' : conversation.type + ' chat',
+      contacts,
+      actionsEnabled: permissions.actions === true,
     });
   }
 
@@ -194,7 +202,7 @@ export function startAssistantScheduler() {
   tick().catch(() => {});
 }
 
-async function askGroq({ userName, prompt, context }) {
+async function askGroq({ userName, prompt, context, contacts = '', actionsEnabled = false }) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -209,11 +217,20 @@ async function askGroq({ userName, prompt, context }) {
         {
           role: 'system',
           content:
-            'You are Chax, a concise chat assistant inside a private messaging app. Help with reminders, drafting, planning, and small coordination tasks. Be friendly and practical. If the user asks to notify or remind someone at a time, explain that you can set reminders in this chat when the request includes a clear time.',
+            'You are Chax, a concise chat assistant inside a private messaging app. Help with reminders, drafting, planning, and small coordination tasks. Be friendly and practical. If the user asks to notify or remind someone at a time, explain that you can set reminders in this chat when the request includes a clear time. ' +
+            (actionsEnabled
+              ? 'The user has enabled action access, but you must only perform actions the server supports and should state what you did.'
+              : 'The user has not enabled general action access, so do not claim you performed actions beyond replying.'),
         },
         {
           role: 'user',
-          content: userName + ' in a ' + context + ' says: ' + prompt,
+          content:
+            userName +
+            ' in a ' +
+            context +
+            ' says: ' +
+            prompt +
+            (contacts ? '\n\nContacts the user granted to Chax:\n' + contacts : ''),
         },
       ],
     }),
@@ -222,6 +239,15 @@ async function askGroq({ userName, prompt, context }) {
   if (!res.ok) throw ApiError.badRequest('Groq request failed', 'GROQ_FAILED');
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || 'I am here. What should I help with?';
+}
+
+async function contactContext(user) {
+  const me = await User.findById(user._id).populate('contacts', 'name username email');
+  const contacts = (me?.contacts || []).slice(0, 120);
+  if (!contacts.length) return 'No saved contacts.';
+  return contacts
+    .map((c) => '- ' + c.name + (c.username ? ' (@' + c.username + ')' : '') + (c.email ? ' <' + c.email + '>' : ''))
+    .join('\n');
 }
 
 function cleanPrompt(text) {

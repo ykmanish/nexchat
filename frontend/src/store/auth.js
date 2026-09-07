@@ -278,6 +278,7 @@ export const useAuth = create((set, get) => ({
       ...previous,
       ...patch,
       notifications: { ...previous?.notifications, ...(patch.notifications || {}) },
+      assistant: { ...previous?.assistant, ...(patch.assistant || {}) },
     };
 
     set((s) => ({ user: { ...s.user, settings: merged } }));

@@ -93,6 +93,9 @@ export const updateSettings = asyncHandler(async (req, res) => {
   Object.entries(req.body).forEach(([k, v]) => {
     if (k === 'notifications' && v && typeof v === 'object') {
       Object.assign(req.user.settings.notifications, v);
+    } else if (k === 'assistant' && v && typeof v === 'object') {
+      if (!req.user.settings.assistant) req.user.settings.assistant = {};
+      Object.assign(req.user.settings.assistant, v);
     } else if (k in req.user.settings) {
       req.user.settings[k] = v;
     }

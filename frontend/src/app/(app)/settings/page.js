@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   DatabaseBackup,
   ScanEye,
+  Bot,
 } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { useUI, toast } from '@/store/ui';
@@ -89,6 +90,12 @@ export default function SettingsPage() {
           icon: Star,
           label: 'Starred messages',
           href: '/settings/starred',
+        },
+        {
+          icon: Bot,
+          label: 'Chax assistant',
+          sublabel: 'Contacts, reminders, and action access',
+          href: '/settings/chax',
         },
       ],
     },

@@ -27,6 +27,11 @@ const settingsSchema = new mongoose.Schema(
          it is opt-in rather than a surprise. */
       typing: { type: Boolean, default: false },
     },
+    assistant: {
+      contacts: { type: Boolean, default: false },
+      reminders: { type: Boolean, default: true },
+      actions: { type: Boolean, default: false },
+    },
   },
   { _id: false }
 );
