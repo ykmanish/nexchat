@@ -32,6 +32,7 @@ export const useChat = create((set, get) => ({
   hasMore: {}, // conversationId -> bool
   loadingMessages: {},
   typing: {}, // conversationId -> { userId: name }
+  assistantTyping: {},
   threads: {}, // rootMessageId -> { root, replies, following }
   deletionReceipts: {}, // messageId -> confirmations seen this session
   threadLoading: {},
@@ -348,6 +349,12 @@ export const useChat = create((set, get) => ({
       return null;
     }
 
+    if (message.body?.plaintext) {
+      const payload = { text: message.body.plaintext, attachments: [] };
+      set((s) => ({ plain: { ...s.plain, [message._id]: payload } }));
+      return payload;
+    }
+
     const cached = await vault.getCached(message._id);
     if (cached?.payload) {
       set((s) => ({ plain: { ...s.plain, [message._id]: cached.payload } }));
@@ -394,6 +401,9 @@ export const useChat = create((set, get) => ({
     const results = await Promise.all(
       remaining.map(async (m) => {
         if (m.type === 'system' || m.type === 'call' || m.deletedForEveryone) return null;
+        if (m.body?.plaintext) {
+          return { message: m, payload: { text: m.body.plaintext, attachments: [] } };
+        }
         try {
           const payload = await e2ee.decryptEnvelope(m);
           return payload ? { message: m, payload } : null;
@@ -887,6 +897,12 @@ export const useChat = create((set, get) => ({
         ...s.typing,
         [conversationId]: { ...(s.typing[conversationId] || {}), [userId]: name },
       },
+    }));
+  },
+
+  setAssistantTyping(conversationId, value) {
+    set((s) => ({
+      assistantTyping: { ...s.assistantTyping, [conversationId]: !!value },
     }));
   },
 

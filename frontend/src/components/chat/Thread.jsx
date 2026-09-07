@@ -33,6 +33,7 @@ export function Thread({ conversationId }) {
   const hasMore = useChat((s) => s.hasMore[conversationId]);
   const loading = useChat((s) => s.loadingMessages[conversationId]);
   const typing = useChat((s) => s.typing[conversationId]);
+  const assistantTyping = useChat((s) => s.assistantTyping[conversationId]);
   const openConversation = useChat((s) => s.openConversation);
   const loadOlder = useChat((s) => s.loadOlder);
   const markRead = useChat((s) => s.markRead);
@@ -275,6 +276,7 @@ export function Thread({ conversationId }) {
             {typingNames.length > 0 && (
               <TypingBubble names={typingNames} isGroup={conversation.type !== 'direct'} />
             )}
+            {assistantTyping && <TypingBubble names={['Chax']} assistant />}
           </AnimatePresence>
 
           <div ref={bottomRef} className="h-1" />

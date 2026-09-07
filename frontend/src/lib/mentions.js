@@ -16,6 +16,7 @@
  */
 
 export const EVERYONE = '__everyone__';
+export const CHAX_ASSISTANT = '__chax_assistant__';
 
 /** How many people a group can have before @everyone becomes admins-only. */
 export const EVERYONE_FREE_LIMIT = 8;
@@ -49,11 +50,26 @@ export function activeToken(text, caret) {
  * would be worse than not offering it.
  */
 export function candidates(conversation, query, { meId, limit = 6 } = {}) {
-  if (!conversation || conversation.type === 'direct') return [];
+  if (!conversation) return [];
 
   const needle = query.trim().toLowerCase();
+  const assistant =
+    !needle || 'chax'.startsWith(needle)
+      ? [
+          {
+            id: CHAX_ASSISTANT,
+            label: 'chax',
+            name: 'Chax',
+            assistant: true,
+          },
+        ]
+      : [];
+
+  if (conversation.type === 'direct') return assistant;
+
   const people = (conversation.participants || [])
     .filter((p) => !p.leftAt && p.user && String(p.user._id) !== String(meId))
+    .filter((p) => p.user.username !== 'chax')
     .map((p) => ({
       id: String(p.user._id),
       name: p.user.name,
@@ -82,7 +98,7 @@ export function candidates(conversation, query, { meId, limit = 6 } = {}) {
       ? [{ id: EVERYONE, label: 'everyone', name: 'Everyone', everyone: true }]
       : [];
 
-  return [...all, ...matched].slice(0, limit);
+  return [...assistant, ...all, ...matched].slice(0, limit);
 }
 
 /** Replaces the token at the caret with a finished mention. */
@@ -144,6 +160,7 @@ export function segments(text, labels = [], { meId } = {}) {
   if (!text) return [];
 
   const known = [
+    { id: CHAX_ASSISTANT, label: 'chax', assistant: true },
     ...labels.map((l) => ({ ...l, everyone: false })),
     { id: EVERYONE, label: 'everyone', everyone: true },
     { id: EVERYONE, label: 'all', everyone: true },
@@ -169,6 +186,7 @@ export function segments(text, labels = [], { meId } = {}) {
       value: '@' + match[1],
       id: hit?.id || null,
       everyone: !!hit?.everyone,
+      assistant: !!hit?.assistant,
       isMe: !!meId && String(hit?.id) === String(meId),
     });
 

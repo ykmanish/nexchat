@@ -15,6 +15,7 @@ import backupRoutes from './backup.routes.js';
 import syncRoutes from './sync.routes.js';
 import forensicsRoutes from './forensics.routes.js';
 import transparencyRoutes from './transparency.routes.js';
+import assistantRoutes from './assistant.routes.js';
 
 const router = Router();
 
@@ -43,5 +44,6 @@ router.use('/backups', backupRoutes);
 router.use('/sync', syncRoutes);
 router.use('/forensics', forensicsRoutes);
 router.use('/transparency', transparencyRoutes);
+router.use('/assistant', assistantRoutes);
 
 export default router;

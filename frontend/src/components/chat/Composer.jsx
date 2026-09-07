@@ -48,6 +48,7 @@ const MAX_ATTACHMENTS = 10;
 
 export function Composer({ conversation, onSent, threadRoot = null, placeholder }) {
   const sendMessage = useChat((s) => s.sendMessage);
+  const setAssistantTyping = useChat((s) => s.setAssistantTyping);
   const editMessage = useChat((s) => s.editMessage);
   const plain = useChat((s) => s.plain);
   const user = useAuth((s) => s.user);
@@ -252,7 +253,7 @@ export function Composer({ conversation, onSent, threadRoot = null, placeholder 
 
   /** Recomputes the active token after any change that can move the caret. */
   function syncToken(value, caret) {
-    if (!conversation || conversation.type === 'direct') return setToken(null);
+    if (!conversation) return setToken(null);
     const next = mentions.activeToken(value, caret);
     setToken(next);
     setMentionIndex(0);
@@ -266,7 +267,7 @@ export function Composer({ conversation, onSent, threadRoot = null, placeholder 
     setToken(null);
     if (!candidate.everyone) {
       setPicked((list) =>
-        list.some((p) => p.id === candidate.id)
+        candidate.assistant || list.some((p) => p.id === candidate.id)
           ? list
           : [...list, { id: candidate.id, label: candidate.label, name: candidate.name }]
       );
@@ -372,6 +373,15 @@ export function Composer({ conversation, onSent, threadRoot = null, placeholder 
           ...(usedLabels.length ? { mentionLabels: usedLabels } : {}),
         },
       });
+      if (!threadRoot && addressedToChax(body, conversation)) {
+        setAssistantTyping(conversation._id, true);
+        api
+          .post('/assistant/handle', { conversationId: conversation._id, text: body })
+          .catch((err) => {
+            toast.error(err.message || 'Chax could not respond');
+          })
+          .finally(() => setAssistantTyping(conversation._id, false));
+      }
       onSent?.();
     } catch (err) {
       toast.error(err.message || 'Message not sent');
@@ -1024,4 +1034,11 @@ function imageDimensions(file) {
     img.onerror = () => resolve({});
     img.src = url;
   });
+}
+
+function addressedToChax(text, conversation) {
+  const value = text.trim();
+  if (!value) return false;
+  if (conversation?.peer?.username === 'chax') return true;
+  return /^@?chax\b/i.test(value);
 }

@@ -12,6 +12,7 @@ import { vanishedLine, VANISHED_SHORT } from '@/lib/vanished';
 import { cn, bubbleTime, isEmojiOnly, linkify, highlightParts, scrollToMessage } from '@/lib/utils';
 import { feedback } from '@/lib/sound';
 import { Avatar } from '@/components/ui/Avatar';
+import { Logo } from '@/components/brand/Logo';
 import { ReceiptTick } from './ChatRow';
 import { Attachment } from './Attachment';
 import { VoiceNote } from './VoiceNote';
@@ -486,7 +487,7 @@ function renderProse(value, query, isActiveHit, mention = {}) {
  * still reads correctly after someone renames themselves.
  */
 function MentionText({ value, labels, meId }) {
-  if (!labels?.length && !/@(everyone|all)\b/i.test(value)) return <span>{value}</span>;
+  if (!labels?.length && !/@(chax|everyone|all)\b/i.test(value)) return <span>{value}</span>;
 
   const parts = mentions.segments(value, labels || [], { meId });
 
@@ -498,12 +499,18 @@ function MentionText({ value, labels, meId }) {
             key={i}
             className={cn(
               'rounded px-[3px] font-semibold',
-              part.isMe || part.everyone
+              part.assistant && 'inline align-baseline',
+              part.assistant
+                ? 'text-inherit'
+                : part.isMe || part.everyone
                 ? 'bg-brand/25 text-brand-strong'
                 : 'text-brand-strong'
             )}
           >
-            {part.value}
+            {part.assistant && (
+              <Logo size={16} className="-ml-0.5 mr-1 inline-grid translate-y-[3px]" />
+            )}
+            <span>{part.value}</span>
           </span>
         ) : (
           <span key={i}>{part.value}</span>

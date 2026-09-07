@@ -17,6 +17,7 @@ import {
   Archive,
   Brush,
   Trash2,
+  Bot,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { IconButton } from '@/components/ui/Button';
@@ -84,6 +85,17 @@ export function ThreadHeader({ conversation, onBack }) {
       from: conversation.peer || { name: conversation.name, avatar: conversation.avatar },
       conversationName: conversation.name,
     });
+  }
+
+  async function addChaxAssistant() {
+    try {
+      const { api } = await import('@/lib/api');
+      const { data } = await api.post('/assistant/conversations/' + conversation._id + '/invite');
+      useChat.getState().upsertConversation(data.conversation);
+      toast.success(data.added ? 'Chax joined this chat' : 'Chax is already here');
+    } catch (err) {
+      toast.error(err.message || 'Could not add Chax');
+    }
   }
 
   return (
@@ -157,6 +169,11 @@ export function ThreadHeader({ conversation, onBack }) {
              null this returns for a group, where there is no single person to
              save. */
           ...[saveContactMenuItem(conversation)].filter(Boolean),
+          {
+            label: 'Add Chax assistant',
+            icon: Bot,
+            onClick: addChaxAssistant,
+          },
           { label: 'Search in chat', icon: Search, onClick: openSearch },
           {
             label: conversation.muted ? 'Unmute' : 'Mute notifications',

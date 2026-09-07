@@ -19,6 +19,7 @@ import { dayLabel } from '../../src/lib/utils';
 import { toast } from '../../src/store/ui';
 import { feedback } from '../../src/lib/feedback';
 import * as notifications from '../../src/lib/notifications';
+import { api } from '../../src/lib/api';
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
@@ -111,11 +112,16 @@ export default function ChatScreen() {
           replyTo: reply,
           type: attachments?.length ? attachments[0].kind : 'text',
         });
+        if (addressedToChax(text, conversation)) {
+          api.post('/assistant/handle', { conversationId: id, text }).catch((err) => {
+            toast.error(err.message || 'Chax could not respond');
+          });
+        }
       } catch (err) {
         toast.error(err.message || 'Could not send that message');
       }
     },
-    [id, sendMessage, replyTo, clearReplyTo]
+    [id, sendMessage, replyTo, clearReplyTo, conversation]
   );
 
   const renderItem = useCallback(
@@ -352,3 +358,10 @@ const styles = StyleSheet.create({
   replyName: { fontSize: 12.5, fontWeight: '700', fontFamily: font.body },
   replyBody: { fontSize: 13, fontFamily: font.body },
 });
+
+function addressedToChax(text, conversation) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  if (conversation?.peer?.username === 'chax') return true;
+  return /^@?chax\b/i.test(value);
+}

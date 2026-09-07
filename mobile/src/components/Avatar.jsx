@@ -13,10 +13,19 @@ import { useTheme } from '../theme';
 export function Avatar({ uri, name, id, size = 48, group = false, online = false }) {
   const theme = useTheme();
   const source = mediaUrl(uri);
+  const assistant = !uri && String(name).toLowerCase() === 'chax';
 
   return (
     <View style={{ width: size, height: size }}>
-      {source ? (
+      {assistant ? (
+        <Image
+          source={require('../../assets/icon.png')}
+          style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
+          contentFit="contain"
+          transition={120}
+          cachePolicy="memory-disk"
+        />
+      ) : source ? (
         <Image
           source={{ uri: source }}
           style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}

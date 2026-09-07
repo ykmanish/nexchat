@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { cn, initials, colorFor, readableOn } from '@/lib/utils';
 import { mediaUrl } from '@/lib/api';
+import { Logo } from '@/components/brand/Logo';
 
 const SIZES = {
   xs: 'h-7 w-7 text-[10px]',
@@ -38,6 +39,7 @@ export function Avatar({
   const bg = color || colorFor(name);
   const url = mediaUrl(src);
   const showImage = url && !broken;
+  const assistant = !src && String(name).toLowerCase() === 'chax';
 
   return (
     <div
@@ -53,7 +55,9 @@ export function Avatar({
         )}
         style={showImage ? undefined : { background: bg, color: readableOn(bg) }}
       >
-        {showImage ? (
+        {assistant ? (
+          <Logo size={size === 'xs' ? 28 : 40} rounded />
+        ) : showImage ? (
           <img
             src={url}
             alt={name}

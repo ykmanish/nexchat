@@ -289,6 +289,12 @@ export const useChat = create((set, get) => ({
       return null;
     }
 
+    if (message.body?.plaintext) {
+      const payload = { text: message.body.plaintext, attachments: [] };
+      set((s) => ({ plain: { ...s.plain, [message._id]: payload } }));
+      return payload;
+    }
+
     const cached = await vault.getCached(message._id);
     if (cached?.payload) {
       set((s) => ({ plain: { ...s.plain, [message._id]: cached.payload } }));
@@ -335,6 +341,9 @@ export const useChat = create((set, get) => ({
     const results = await Promise.all(
       remaining.map(async (m) => {
         if (m.type === 'system' || m.type === 'call' || m.deletedForEveryone) return null;
+        if (m.body?.plaintext) {
+          return { message: m, payload: { text: m.body.plaintext, attachments: [] } };
+        }
         try {
           const payload = await e2ee.decryptEnvelope(m);
           return payload ? { message: m, payload } : null;

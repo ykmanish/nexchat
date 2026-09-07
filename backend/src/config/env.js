@@ -67,6 +67,12 @@ export const env = {
     serviceAccountPath: process.env.FCM_SERVICE_ACCOUNT || '',
     serviceAccountJson: process.env.FCM_SERVICE_ACCOUNT_JSON || '',
   },
+
+  assistant: {
+    enabled: bool(process.env.ASSISTANT_ENABLED, true),
+    groqApiKey: process.env.GROQ_API_KEY || '',
+    groqModel: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+  },
 };
 
 export const rootDir = path.resolve(__dirname, '../..');

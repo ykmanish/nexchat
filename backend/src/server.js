@@ -6,6 +6,7 @@ import { initSockets } from './sockets/index.js';
 import { presence } from './services/presence.js';
 import { initPush } from './services/push.js';
 import { initAttestation } from './services/attestation.js';
+import { startAssistantScheduler } from './services/assistant.js';
 import { logger } from './utils/logger.js';
 
 async function start() {
@@ -13,6 +14,7 @@ async function start() {
   await presence.resetAll();
   initPush();
   await initAttestation();
+  startAssistantScheduler();
 
   const app = createApp();
   const server = http.createServer(app);

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { AtSign } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { Logo } from '@/components/brand/Logo';
 import { cn } from '@/lib/utils';
 
 /**
@@ -51,7 +52,9 @@ export function MentionMenu({ items, active, onPick, onHover }) {
               i === active ? 'bg-brand-tint' : 'hover:bg-surface-2'
             )}
           >
-            {item.everyone ? (
+            {item.assistant ? (
+              <Logo size={36} />
+            ) : item.everyone ? (
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-tint text-brand-strong">
                 <AtSign size={17} />
               </span>
@@ -69,7 +72,11 @@ export function MentionMenu({ items, active, onPick, onHover }) {
                 {item.everyone ? 'Everyone' : item.name}
               </span>
               <span className="block truncate text-[12.5px] text-ink-muted">
-                {item.everyone ? 'Notify the whole group' : '@' + item.label}
+                {item.assistant
+                  ? 'Ask for reminders and help'
+                  : item.everyone
+                    ? 'Notify the whole group'
+                    : '@' + item.label}
               </span>
             </span>
 

@@ -5,6 +5,7 @@ export { Otp } from './Otp.js';
 export { LinkSession } from './LinkSession.js';
 export { Conversation } from './Conversation.js';
 export { Message } from './Message.js';
+export { AssistantReminder } from './AssistantReminder.js';
 export { Story } from './Story.js';
 export { Post } from './Post.js';
 export { Comment } from './Comment.js';

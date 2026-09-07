@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import {
-  Archive, BellOff, Bell, Pin, PinOff, Trash2, Eraser, Users, ShieldCheck, Ban,
+  Archive, BellOff, Bell, Pin, PinOff, Trash2, Eraser, Users, ShieldCheck, Ban, Bot,
 } from 'lucide-react-native';
 
 import { Sheet, SheetRow } from '../Sheet';
@@ -81,6 +81,7 @@ export function ChatOptionsSheet({ open, onClose, conversation }) {
 export function ChatInfoSheet({ open, onClose, conversation }) {
   const theme = useTheme();
   const setConversationState = useChat((s) => s.setConversationState);
+  const upsertConversation = useChat((s) => s.upsertConversation);
 
   if (!conversation) return null;
 
@@ -130,6 +131,21 @@ export function ChatInfoSheet({ open, onClose, conversation }) {
           icon={ShieldCheck}
           label="Encryption"
           description="Messages and media in this chat are end-to-end encrypted"
+        />
+
+        <SheetRow
+          icon={Bot}
+          label="Add Chax assistant"
+          description="Use @chax for reminders and chat help"
+          onPress={async () => {
+            try {
+              const { data } = await api.post('/assistant/conversations/' + c._id + '/invite');
+              upsertConversation(data.conversation);
+              toast.success(data.added ? 'Chax joined this chat' : 'Chax is already here');
+            } catch (err) {
+              toast.error(err.message || 'Could not add Chax');
+            }
+          }}
         />
 
         {isGroup && (

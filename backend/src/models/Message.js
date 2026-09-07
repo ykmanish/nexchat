@@ -76,6 +76,7 @@ const messageSchema = new mongoose.Schema(
       ciphertext: { type: String, default: null },
       iv: { type: String, default: null },
       algorithm: { type: String, default: 'AES-GCM-256' },
+      plaintext: { type: String, default: null },
     },
     keys: { type: [keySlotSchema], default: [] },
 

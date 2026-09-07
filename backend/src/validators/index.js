@@ -176,6 +176,11 @@ export const banSchema = z.object({
   reason: z.string().max(200).optional(),
 });
 
+export const assistantHandleSchema = z.object({
+  conversationId: objectId,
+  text: z.string().trim().min(1).max(4000),
+});
+
 /* ────────────────────────────── messages ────────────────────────────── */
 
 const keySlot = z.object({
