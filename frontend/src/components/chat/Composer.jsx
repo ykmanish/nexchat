@@ -49,6 +49,8 @@ const MAX_ATTACHMENTS = 10;
 export function Composer({ conversation, onSent, threadRoot = null, placeholder }) {
   const sendMessage = useChat((s) => s.sendMessage);
   const setAssistantTyping = useChat((s) => s.setAssistantTyping);
+  const contacts = useChat((s) => s.contacts);
+  const loadContacts = useChat((s) => s.loadContacts);
   const editMessage = useChat((s) => s.editMessage);
   const plain = useChat((s) => s.plain);
   const user = useAuth((s) => s.user);
@@ -246,10 +248,15 @@ export function Composer({ conversation, onSent, threadRoot = null, placeholder 
   const mentionItems = useMemo(
     () =>
       token
-        ? mentions.candidates(conversation, token.query, { meId: user?._id })
+        ? mentions.candidates(conversation, token.query, { meId: user?._id, contacts })
         : [],
-    [token, conversation, user?._id]
+    [token, conversation, user?._id, contacts]
   );
+
+  useEffect(() => {
+    if (!token) return;
+    loadContacts({ force: false }).catch(() => {});
+  }, [token, loadContacts]);
 
   /** Recomputes the active token after any change that can move the caret. */
   function syncToken(value, caret) {

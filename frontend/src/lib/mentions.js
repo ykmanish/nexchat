@@ -49,7 +49,7 @@ export function activeToken(text, caret) {
  * where it is allowed — offering it and then having the server quietly drop it
  * would be worse than not offering it.
  */
-export function candidates(conversation, query, { meId, limit = 6 } = {}) {
+export function candidates(conversation, query, { meId, limit = 6, contacts = [] } = {}) {
   if (!conversation) return [];
 
   const needle = query.trim().toLowerCase();
@@ -65,7 +65,17 @@ export function candidates(conversation, query, { meId, limit = 6 } = {}) {
         ]
       : [];
 
-  if (conversation.type === 'direct') return assistant;
+  const contactPeople = (contacts || [])
+    .filter((p) => p && String(p._id || p.id) !== String(meId))
+    .map((p) => ({
+      id: String(p._id || p.id),
+      name: p.name,
+      username: p.username,
+      avatar: p.avatar,
+      avatarColor: p.avatarColor,
+      label: label(p),
+      contact: true,
+    }));
 
   const people = (conversation.participants || [])
     .filter((p) => !p.leftAt && p.user && String(p.user._id) !== String(meId))
@@ -80,14 +90,20 @@ export function candidates(conversation, query, { meId, limit = 6 } = {}) {
       role: p.role,
     }));
 
+  const contactMap = new Map(contactPeople.map((p) => [p.id, p]));
+  people.forEach((p) => contactMap.delete(p.id));
+  const allPeople = [...people, ...contactMap.values()];
+
   const matched = needle
-    ? people.filter(
+    ? allPeople.filter(
         (p) =>
           p.label.toLowerCase().startsWith(needle) ||
           p.name.toLowerCase().includes(needle) ||
           p.name.toLowerCase().split(/\s+/).some((word) => word.startsWith(needle))
       )
-    : people;
+    : allPeople;
+
+  if (conversation.type === 'direct') return [...assistant, ...matched].slice(0, limit);
 
   const canAddressAll =
     (conversation.memberCount || people.length + 1) <= EVERYONE_FREE_LIMIT ||

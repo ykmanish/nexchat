@@ -104,6 +104,7 @@ export async function handleAssistantRequest({ user, conversationId, text }) {
 
   let reply;
   if (sendAction) {
+    sendAction.sourceConversation = conversation._id;
     reply = await performSendAction({ user, bot, action: sendAction, permissions });
   } else if (reminder) {
     if (permissions.reminders === false) {
@@ -143,6 +144,20 @@ async function performSendAction({ user, bot, action, permissions }) {
   const target = await resolveContact(user, action.to);
   if (!target) {
     return 'I could not find "' + action.to + '" in the contacts you shared with me.';
+  }
+
+  if (action.dueAt) {
+    if (permissions.reminders === false) {
+      return 'Reminder access is off for Chax. Turn it on in Settings > Chax assistant first.';
+    }
+    await AssistantReminder.create({
+      conversation: action.sourceConversation,
+      createdBy: user._id,
+      text: 'send "' + action.message + '" to ' + target.name,
+      dueAt: action.dueAt,
+      action: { kind: 'send-message', to: target._id, message: action.message },
+    });
+    return 'Done. I will send "' + action.message + '" to ' + target.name + ' ' + formatWhen(action.dueAt) + '.';
   }
 
   const conv = await getOrCreateUserDirect(user._id, target._id);
@@ -292,7 +307,22 @@ export function startAssistantScheduler() {
     const bot = due.length ? await getAssistantUser() : null;
     for (const reminder of due) {
       try {
-        await postAssistantMessage(reminder.conversation, bot._id, 'Reminder: ' + reminder.text);
+        if (reminder.action?.kind === 'send-message' && reminder.action.to) {
+          const conv = await getOrCreateUserDirect(reminder.createdBy, reminder.action.to);
+          const owner = await User.findById(reminder.createdBy).select('name');
+          await postAssistantMessage(
+            conv._id,
+            bot._id,
+            (owner?.name || 'Someone') + ' asked me to send this: ' + reminder.action.message
+          );
+          await postAssistantMessage(
+            reminder.conversation,
+            bot._id,
+            'Sent it now: "' + reminder.action.message + '"'
+          );
+        } else {
+          await postAssistantMessage(reminder.conversation, bot._id, 'Reminder: ' + reminder.text);
+        }
         reminder.status = 'sent';
         reminder.sentAt = new Date();
         reminder.failure = null;
@@ -361,15 +391,44 @@ function cleanPrompt(text) {
 }
 
 function parseSendAction(text) {
-  const quoted = text.match(/\bsend\s+["“](.+?)["”]\s+to\s+(.+)$/i);
-  const plain = text.match(/\bsend\s+(.+?)\s+to\s+(.+)$/i);
+  const schedule = parseTrailingSchedule(text);
+  const withoutSchedule = schedule ? text.slice(0, schedule.start).trim() : stripTrailingSchedule(text);
+  const quoted = withoutSchedule.match(/\bsend\s+["“](.+?)["”]\s+to\s+(.+)$/i);
+  const plain = withoutSchedule.match(/\bsend\s+(.+?)\s+to\s+(.+)$/i);
   const match = quoted || plain;
   if (!match) return null;
 
   return {
     message: match[1].trim(),
     to: match[2].trim().replace(/[.!?]+$/, ''),
+    dueAt: schedule?.dueAt || null,
   };
+}
+
+function parseTrailingSchedule(text) {
+  const after = String(text || '').match(/\s+after\s+(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\s*$/i);
+  if (after) {
+    const amount = Number(after[1]);
+    const unit = after[2].toLowerCase();
+    const multiplier = unit.startsWith('hour') || unit.startsWith('hr')
+      ? 3600_000
+      : unit.startsWith('min')
+        ? 60_000
+        : 1000;
+    return { start: after.index, dueAt: new Date(Date.now() + amount * multiplier) };
+  }
+
+  const at = String(text || '').match(/\s+(?:at|on)\s+(.+)$/i);
+  if (!at) return null;
+  const dueAt = parseWhen(at[1]);
+  return dueAt ? { start: at.index, dueAt } : null;
+}
+
+function stripTrailingSchedule(text) {
+  return String(text || '')
+    .replace(/\s+after\s+\d+\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\s*$/i, '')
+    .replace(/\s+(?:at|on)\s+.+$/i, '')
+    .trim();
 }
 
 function parseReminder(text) {

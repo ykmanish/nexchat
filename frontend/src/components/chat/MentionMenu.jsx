@@ -76,7 +76,9 @@ export function MentionMenu({ items, active, onPick, onHover }) {
                   ? 'Ask for reminders and help'
                   : item.everyone
                     ? 'Notify the whole group'
-                    : '@' + item.label}
+                    : item.contact
+                      ? 'Contact' + (item.username ? ' @' + item.username : '')
+                      : '@' + item.label}
               </span>
             </span>
 
