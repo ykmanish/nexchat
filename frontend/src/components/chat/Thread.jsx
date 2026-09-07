@@ -259,7 +259,7 @@ export function Thread({ conversationId }) {
                   <SystemMessage key={message._id} message={message} />
                 ) : (
                   <MessageBubble
-                    key={message._id || message.clientId}
+                    key={message.clientId || message._id}
                     message={message}
                     conversation={conversation}
                     currentUserId={user?._id}

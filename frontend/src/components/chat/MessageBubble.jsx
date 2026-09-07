@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { motion, useMotionValue, useTransform } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion';
 import {
   CornerUpLeft, Pencil, Star, Clock, AlertCircle, RotateCw, Forward, Check, MessagesSquare,
 } from 'lucide-react';
@@ -262,7 +262,7 @@ export function MessageBubble({
                   isMine ? 'bubble-out' : 'bubble-in',
                   // Only the first bubble of a run gets the tail.
                   message.firstOfGroup && (isMine ? 'bubble-tail-out' : 'bubble-tail-in'),
-                  mediaOnly && !viewOnce ? 'p-[3px]' : 'px-2 py-[6px]',
+                  mediaOnly && !viewOnce ? 'p-[3px]' : 'px-3 py-2',
                   message.failed && 'opacity-60'
                 )
           )}
@@ -328,7 +328,7 @@ export function MessageBubble({
             <div
               className={cn(
                 'px-1',
-                bigEmoji ? 'text-[42px] leading-[1.2]' : 'text-[14.6px] leading-[1.35]'
+                bigEmoji ? 'text-[42px] leading-[1.2]' : 'text-[14.8px] leading-[1.35]'
               )}
             >
               {linkUrl && !bigEmoji && !isInternalLink(linkUrl) && (
@@ -363,7 +363,7 @@ export function MessageBubble({
                               the timestamp tucks onto that line rather than
                               starting a new one. */}
                           {!bigEmoji && pi === lastText && (
-                            <span className="inline-block w-[64px]" aria-hidden />
+                            <span className="inline-block w-[60px]" aria-hidden />
                           )}
                         </p>
                       )
@@ -390,21 +390,33 @@ export function MessageBubble({
                   ? 'absolute bottom-2 right-3 rounded-full bg-black/45 px-1.5 py-0.5 text-white'
                   : viewOnce
                     ? 'mt-0.5 justify-end pr-1'
-                    : 'absolute bottom-[5px] right-2',
+                    : 'absolute bottom-[7px] right-3',
               (!mediaOnly || viewOnce) && !bigEmoji && (isMine ? 'text-[var(--bubble-out-meta)]' : 'text-[var(--bubble-in-meta)]')
             )}
           >
             {message.starred && <Star size={10} fill="currentColor" />}
             {message.editedAt && <Pencil size={9} />}
             <span className="tabular-nums">{bubbleTime(message.createdAt)}</span>
-            {isMine &&
-              (message.pending ? (
-                <Clock size={12} className="animate-pulse" />
-              ) : message.failed ? (
-                <AlertCircle size={12} className="text-danger" />
-              ) : (
-                <ReceiptTick status={status} />
-              ))}
+            {isMine && (
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={message.failed ? 'failed' : status}
+                  initial={{ opacity: 0, scale: 0.72, y: 1 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.72, y: -1 }}
+                  transition={{ duration: 0.14 }}
+                  className="grid h-[15px] w-[15px] place-items-center"
+                >
+                  {message.pending ? (
+                    <Clock size={12} className="animate-pulse" />
+                  ) : message.failed ? (
+                    <AlertCircle size={12} className="text-danger" />
+                  ) : (
+                    <ReceiptTick status={status} />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            )}
           </span>
         </motion.div>
 

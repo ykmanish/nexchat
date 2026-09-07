@@ -544,7 +544,17 @@ export const useChat = create((set, get) => ({
 
       set((s) => {
         const settle = (list) =>
-          (list || []).map((m) => (m.clientId === clientId ? { ...saved, pending: false } : m));
+          (list || []).map((m) =>
+            m.clientId === clientId
+              ? {
+                  ...m,
+                  ...saved,
+                  clientId,
+                  createdAt: m.createdAt || saved.createdAt,
+                  pending: false,
+                }
+              : m
+          );
 
         const plain = { ...s.plain, [saved._id]: payload };
         delete plain[clientId];
@@ -827,10 +837,29 @@ export const useChat = create((set, get) => ({
 
     set((s) => {
       const list = s.messages[conversationId] || [];
-      // Our own optimistic copy may already be here.
-      const filtered = list.filter(
-        (m) => m._id !== message._id && m.clientId !== message.clientId
+      // Our own optimistic copy may already be here. Merge the socket echo into
+      // that same row so React keeps the bubble mounted and the receipt can
+      // transition from clock to tick without a visible remove/re-add.
+      const optimisticIndex = list.findIndex(
+        (m) => message.clientId && m.clientId === message.clientId
       );
+
+      if (optimisticIndex >= 0) {
+        const next = [...list];
+        const current = next[optimisticIndex];
+        next[optimisticIndex] = {
+          ...current,
+          ...message,
+          clientId: current.clientId,
+          createdAt: current.createdAt || message.createdAt,
+          pending: false,
+        };
+        return {
+          messages: { ...s.messages, [conversationId]: next },
+        };
+      }
+
+      const filtered = list.filter((m) => m._id !== message._id);
       return {
         messages: { ...s.messages, [conversationId]: [...filtered, message] },
       };

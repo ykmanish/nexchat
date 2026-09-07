@@ -42,12 +42,12 @@
     --accent-tint: rgba(193, 255, 114, 0.34);
 
     /* bubbles — overridden per user preference */
-    --bubble-out: #d9fdd3;
-    --bubble-out-ink: #111b21;
-    --bubble-out-meta: rgba(17, 27, 33, 0.45);
+    --bubble-out: #dfffa8;
+    --bubble-out-ink: #17220d;
+    --bubble-out-meta: rgba(23, 34, 13, 0.48);
     --bubble-in: #ffffff;
-    --bubble-in-ink: #111b21;
-    --bubble-in-meta: rgba(17, 27, 33, 0.4);
+    --bubble-in-ink: #171717;
+    --bubble-in-meta: rgba(23, 23, 23, 0.42);
 
     /* chat canvas */
     --chat-bg: #efe7de;
@@ -104,12 +104,12 @@
     --accent-hover: #d2ff92;
     --accent-tint: rgba(193, 255, 114, 0.16);
 
-    --bubble-out: #144d37;
-    --bubble-out-ink: #e9edef;
-    --bubble-out-meta: rgba(233, 237, 239, 0.55);
-    --bubble-in: #1c2321;
-    --bubble-in-ink: #e9edef;
-    --bubble-in-meta: rgba(233, 237, 239, 0.45);
+    --bubble-out: #b9f56a;
+    --bubble-out-ink: #10140c;
+    --bubble-out-meta: rgba(16, 20, 12, 0.52);
+    --bubble-in: #f7f7f7;
+    --bubble-in-ink: #121212;
+    --bubble-in-meta: rgba(18, 18, 18, 0.46);
 
     --chat-bg: #0b100e;
     --chat-doodle: rgba(233, 237, 239, 0.04);
@@ -231,8 +231,8 @@
   .bubble {
     position: relative;
     max-width: 100%;
-    border-radius: 8px;
-    box-shadow: 0 1px 0.5px rgba(var(--shadow-key), 0.13);
+    border-radius: 12px;
+    box-shadow: none;
   }
 
   .bubble-out {
